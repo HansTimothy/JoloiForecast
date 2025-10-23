@@ -90,18 +90,14 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.100):
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={lat}&longitude={lon}"
         f"&start={start_date}&end={end_date}"
-        f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain&timezone=Asia%2FBangkok"
-        
+        f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain"
+        f"&timezone=Asia%2FBangkok"
     )
 
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
-        j = resp.json()
-        
-        
-        r = requests.get(url)
-        data = r.json()
+        data = resp.json()
         
         # Buat dataframe
         df = pd.DataFrame({
@@ -114,27 +110,30 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.100):
         })
         
         df["Datetime"] = df["Datetime"].dt.floor("H")
-        
         return df
+    
+    except Exception as e:
+        st.error(f"Gagal fetch climate data: {e}")
+        return pd.DataFrame()  # kembalikan empty df jika gagal
     
     # -----------------------------
     # Contoh merge dengan water level
     # -----------------------------
-    if 'wl_hourly' in locals() and wl_hourly is not None:
-        start_dt = wl_hourly["Datetime"].min()
-        end_dt = wl_hourly["Datetime"].max()
-        
-        climate_df = fetch_climate_historical(start_dt, end_dt)
-        
-        # Merge on Datetime
-        merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
-        
-        # Pastikan numerik
-        numeric_cols = ["Water_level","Pressure","Cloud_cover","Soil_temp","Soil_moisture","Rain"]
-        for col in numeric_cols:
-            if col in merged_df.columns:
-                merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce')
-        merged_df.fillna(0, inplace=True)
-        
-        st.subheader("Merged Water Level + Climate Data")
-        st.dataframe(merged_df.round(2))
+    if wl_hourly is not None:
+    start_dt = wl_hourly["Datetime"].min()
+    end_dt = wl_hourly["Datetime"].max()
+    
+    climate_df = fetch_climate_historical(start_dt, end_dt)
+    
+    # Merge on Datetime
+    merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
+    
+    # Pastikan numerik
+    numeric_cols = ["Water_level","Pressure","Cloud_cover","Soil_temp","Soil_moisture","Rain"]
+    for col in numeric_cols:
+        if col in merged_df.columns:
+            merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce')
+    merged_df.fillna(0, inplace=True)
+    
+    st.subheader("Merged Water Level + Climate Data")
+    st.dataframe(merged_df.round(2))
