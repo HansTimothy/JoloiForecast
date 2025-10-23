@@ -54,17 +54,23 @@ uploaded_file = st.file_uploader("Upload file CSV AWLR Logs Joloi", type=["csv"]
 wl_hourly = None
 if uploaded_file is not None:
     try:
-        df_wl = pd.read_csv(uploaded_file, sep=None, engine='python', skip_blank_lines=True)
-        # Pastikan kolom ada
+        # baca CSV
+        df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
         if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
             st.error("File harus memiliki kolom 'Datetime' dan 'Level Air'")
         else:
-            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"])
+            # ubah ke datetime GMT+7
+            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.tz_localize(tz)
+            
+            # filter 24 jam sebelum start_datetime
             start_limit = start_datetime - timedelta(hours=24)
             df_wl = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
+            
+            # group by jam
             df_wl["Hour"] = df_wl["Datetime"].dt.floor("H")
             wl_hourly = df_wl.groupby("Hour")["Level Air"].mean().reset_index()
-            wl_hourly.rename(columns={"Hour":"Datetime","Level Air":"Water_level"}, inplace=True)
+            wl_hourly.rename(columns={"Hour": "Datetime", "Level Air": "Water_level"}, inplace=True)
+            
             st.success(f"Data water level berhasil diupload ({len(wl_hourly)} jam)")
             st.dataframe(wl_hourly.style.format({"Water_level":"{:.2f}"}))
     except Exception as e:
