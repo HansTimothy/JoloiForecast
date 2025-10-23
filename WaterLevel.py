@@ -90,10 +90,11 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.100):
     end_utc = (end_dt - timedelta(hours=7)).isoformat()
 
     url = (
-        f"https://api.open-meteo.com/v1/forecast?"
+        f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={lat}&longitude={lon}"
-        f"&hourly=temperature_2m,surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm"
-        f"&start={start_utc}&end={end_utc}&timezone=GMT"
+        f"&start={start_utc}&end={end_utc}"
+        f"&hourly=temperature_2m,surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm&timezone=Asia%2FBangkok"
+        
     )
 
     try:
