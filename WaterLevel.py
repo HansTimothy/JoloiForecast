@@ -31,13 +31,15 @@ selected_date = st.date_input(
     max_value=rounded_now.date()
 )
 
-selected_time = st.time_input(
+hour_options = list(range(0, rounded_now.hour + 1))
+selected_hour = st.selectbox(
     "Jam",
-    value=time(rounded_now.hour, 0)
+    hour_options,
+    index=hour_options.index(rounded_now.hour)
 )
 
-# gabungkan menjadi datetime
-start_datetime = datetime.combine(selected_date, selected_time)
+# Gabungkan menjadi datetime aware SGT
+start_datetime = sg_tz.localize(datetime.combine(selected_date, time(selected_hour, 0)))
 
 # -----------------------------
 # Upload water level file
