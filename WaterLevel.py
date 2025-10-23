@@ -15,9 +15,9 @@ model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 st.title("Water Level Hourly Prediction Dashboard 🌊")
 
 # waktu sekarang dibulatkan ke jam bawah
-sg_tz = pytz.timezone("Asia/Singapore")
-sg_now = datetime.now(sg_tz)
-rounded_now = sg_now.replace(minute=0, second=0, microsecond=0)
+tz = pytz.timezone("Etc/GMT-7")  # GMT+7
+now = datetime.now(tz)
+rounded_now = now.replace(minute=0, second=0, microsecond=0)
 
 # -----------------------------
 # Pilih datetime start forecast
@@ -31,15 +31,19 @@ selected_date = st.date_input(
     max_value=rounded_now.date()
 )
 
-hour_options = list(range(0, rounded_now.hour + 1))
-selected_hour = st.selectbox(
-    "Jam",
+hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
+selected_hour_str = st.selectbox(
+    "Jam (HH:00)",
     hour_options,
-    index=hour_options.index(rounded_now.hour)
+    index=len(hour_options)-1
 )
 
-# Gabungkan menjadi datetime aware SGT
-start_datetime = sg_tz.localize(datetime.combine(selected_date, time(selected_hour, 0)))
+# Ambil integer jam dari string
+selected_hour = int(selected_hour_str.split(":")[0])
+
+# Gabungkan menjadi datetime aware GMT+7
+start_datetime = tz.localize(datetime.combine(selected_date, time(selected_hour, 0)))
+st.write(f"Start datetime (GMT+7): {start_datetime}")
 
 # -----------------------------
 # Upload water level file
