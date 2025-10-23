@@ -74,20 +74,6 @@ if uploaded_file is not None:
         st.error(f"Gagal membaca file: {e}")
 
 # -----------------------------
-# Jam input sesuai data water level
-# -----------------------------
-if wl_hourly is not None and not wl_hourly.empty:
-    max_hour = wl_hourly["Datetime"].dt.hour.max()
-else:
-    max_hour = rounded_now.hour
-
-hour_options = [f"{h:02d}:00" for h in range(0, max_hour+1)]
-selected_hour_str = st.selectbox("Jam", hour_options, index=len(hour_options)-1)
-selected_hour = int(selected_hour_str.split(":")[0])
-start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
-st.write(f"Start datetime (GMT+7): {start_datetime}")
-
-# -----------------------------
 # Fetch_climate_data + Fetch & Predict
 # -----------------------------
 def fetch_climate_data(start_dt, end_dt, mode="historical"):
