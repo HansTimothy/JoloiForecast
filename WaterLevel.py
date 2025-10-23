@@ -75,7 +75,7 @@ if uploaded_file is not None:
             wl_hourly = df_wl.groupby("Hour")["Level Air"].mean().reset_index()
             wl_hourly.rename(columns={"Hour": "Datetime", "Level Air": "Water_level"}, inplace=True)
             
-            st.success(f"Data water level berhasil diupload ({len(wl_hourly)} jam)")
+            st.success(f"Data water level berhasil diupload)")
             st.dataframe(wl_hourly.style.format({"Water_level":"{:.2f}"}))
     except Exception as e:
         st.error(f"Gagal membaca file: {e}")
