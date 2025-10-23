@@ -78,71 +78,61 @@ if uploaded_file is not None:
         st.error(f"Gagal membaca file: {e}")
 
 # -----------------------------
-# Tombol fetch data historis
+# Fungsi fetch climate historis
 # -----------------------------
-st.subheader("Fetch Climate Data")
+def fetch_climate_historical(start_dt, end_dt, lat=-0.10544816, lon=114.20109):
+    """
+    Ambil data historis cuaca dari Open-Meteo API
+    start_dt, end_dt: datetime naive GMT+7
+    return: DataFrame
+    """
+    start_utc = (start_dt - timedelta(hours=7)).isoformat()
+    end_utc = (end_dt - timedelta(hours=7)).isoformat()
+
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lon}"
+        f"&hourly=temperature_2m,surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm"
+        f"&start={start_utc}&end={end_utc}&timezone=GMT"
+    )
+
+    try:
+        r = requests.get(url)
+        data = r.json()
+        df = pd.DataFrame({
+            "Datetime": pd.to_datetime(data["hourly"]["time"]),
+            "Temperature": data["hourly"]["temperature_2m"],
+            "Pressure": data["hourly"]["surface_pressure"],
+            "Cloud_cover": data["hourly"]["cloud_cover"],
+            "Soil_temp": data["hourly"]["soil_temperature_0_to_7cm"],
+            "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"]
+        })
+        # Convert ke GMT+7
+        df["Datetime"] = df["Datetime"] + timedelta(hours=7)
+        df["Datetime"] = df["Datetime"].dt.floor("H")
+        return df
+    except Exception as e:
+        st.error(f"Gagal fetch climate data: {e}")
+        return None
+
+# -----------------------------
+# Tombol fetch climate data
+# -----------------------------
+climate_df = None
+merged_df = None
 
 if wl_hourly is not None:
-    if st.button("Fetch Climate Data"):
-        st.info("Mengambil data iklim...")
-
-        # -----------------------------
-        # Fungsi fetch data cuaca historis
-        # -----------------------------
-        def fetch_climate_data(start_dt, end_dt):
-            """
-            Ambil data iklim dari Open-Meteo API
-            start_dt, end_dt: datetime (naive GMT+7)
-            return: DataFrame dengan kolom Datetime, Rainfall, Cloud_cover, Surface_pressure
-            """
-            # Konversi ke ISO format UTC (Open-Meteo default UTC)
-            start_utc = (start_dt - timedelta(hours=7)).isoformat()
-            end_utc = (end_dt - timedelta(hours=7)).isoformat()
-
-            url = (
-                f"https://archive-api.open-meteo.com/v1/archive?latitude=-0.117&longitude=114.1"
-                f"&start_date={start_utc}&end_date={end_utc}"
-                f"&hourly=temperature_2m,surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm"
-                f"&timezone=Asia%2FBangkok"
-            )
-
-            try:
-                response = requests.get(url)
-                data = response.json()
-                
-                df = pd.DataFrame({
-                    "Datetime": pd.to_datetime(data["hourly"]["time"]),
-                    "Rainfall": data["hourly"]["precipitation"],
-                    "Cloud_cover": data["hourly"]["cloudcover"],
-                    "Surface_pressure": data["hourly"]["surface_pressure"]
-                })
-
-                # Konversi ke GMT+7
-                df["Datetime"] = df["Datetime"] + timedelta(hours=7)
-                df["Datetime"] = df["Datetime"].dt.floor("H")
-
-                return df
-            except Exception as e:
-                st.error(f"Gagal fetch data cuaca: {e}")
-                return None
-
-        # -----------------------------
-        # Ambil data cuaca 24 jam terakhir sebelum start_datetime
-        # -----------------------------
+    if st.button("Fetch Climate Data 24h"):
         start_limit = start_datetime - timedelta(hours=24)
-        climate_df = fetch_climate_data(start_limit, start_datetime)
-
+        climate_df = fetch_climate_historical(start_limit, start_datetime)
         if climate_df is not None:
-            # Merge dengan water level
             merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
-            st.success("Data cuaca berhasil diambil dan digabungkan")
+            st.subheader("Preview Water Level + Climate Data 24 Jam Sebelumnya")
             st.dataframe(merged_df.style.format({
                 "Water_level":"{:.2f}",
-                "Rainfall":"{:.2f}",
+                "Temperature":"{:.2f}",
+                "Pressure":"{:.2f}",
                 "Cloud_cover":"{:.2f}",
-                "Surface_pressure":"{:.2f}"
+                "Soil_temp":"{:.2f}",
+                "Soil_moisture":"{:.3f}"
             }))
-        st.plotly_chart(fig, use_container_width=True)
-        st.success("✅ Fetch & Predict selesai.")
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat prediksi: {e}")
