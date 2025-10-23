@@ -5,6 +5,7 @@ import requests
 import joblib
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, time
+from zoneinfo import ZoneInfo
 
 # -----------------------------
 # Load trained model
@@ -14,8 +15,8 @@ model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 st.title("Water Level Hourly Prediction Dashboard 🌊")
 
 # waktu sekarang dibulatkan ke jam bawah
-now = datetime.now()
-rounded_now = now.replace(minute=0, second=0, microsecond=0)
+sg_now = datetime.now(ZoneInfo("Asia/Singapore"))
+rounded_now = sg_now.replace(minute=0, second=0, microsecond=0)
 
 # -----------------------------
 # Pilih datetime start forecast
