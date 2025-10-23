@@ -46,7 +46,7 @@ selected_hour_str = st.selectbox(
 selected_hour = int(selected_hour_str.split(":")[0])
 
 # Gabungkan menjadi datetime aware GMT+7
-start_datetime = tz.localize(datetime.combine(selected_date, time(selected_hour, 0)))
+start_datetime = tz.localize(None)
 st.write(f"Start datetime (GMT+7): {start_datetime}")
 
 # -----------------------------
@@ -64,7 +64,7 @@ if uploaded_file is not None:
             st.error("File harus memiliki kolom 'Datetime' dan 'Level Air'")
         else:
             # ubah ke datetime GMT+7
-            df_wl["Datetime"] = df_wl["Datetime"].dt.tz_convert(None)
+            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.tz_localize(None)
             
             # filter 24 jam sebelum start_datetime
             start_limit = start_datetime - timedelta(hours=24)
