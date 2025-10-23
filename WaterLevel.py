@@ -13,6 +13,10 @@ model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 
 st.title("Water Level Hourly Prediction Dashboard 🌊")
 
+# waktu sekarang dibulatkan ke jam bawah
+now = datetime.now()
+rounded_now = now.replace(minute=0, second=0, microsecond=0)
+
 # -----------------------------
 # Pilih datetime start forecast
 # -----------------------------
