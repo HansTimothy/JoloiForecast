@@ -100,10 +100,10 @@ if wl_hourly is not None:
             end_utc = (end_dt - timedelta(hours=7)).isoformat()
 
             url = (
-                "https://api.open-meteo.com/v1/forecast?"
-                f"latitude=-9.6615&longitude=124.0391"  # Contoh lokasi NTT
-                f"&hourly=precipitation,cloudcover,surface_pressure"
-                f"&start={start_utc}&end={end_utc}&timezone=GMT"
+                f"https://archive-api.open-meteo.com/v1/archive?latitude=-0.117&longitude=114.1"
+                f"&start_date={start_utc}&end_date={end_utc}"
+                f"&hourly=temperature_2m,surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm"
+                f"&timezone=Asia%2FBangkok"
             )
 
             try:
