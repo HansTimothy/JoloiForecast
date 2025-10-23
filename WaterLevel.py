@@ -160,9 +160,9 @@ def fetch_climate_data(start_dt, end_dt, mode="historical"):
 # -----------------------------
 # Actual Fetch & Predict block
 # -----------------------------
-if st.button("Fetch Weather & Predict") and wl_hourly is not None:
+if st.button("Fetch & Predict 🌦️") and wl_hourly is not None:
     try:
-        st.info("Mengambil data iklim dan melakukan prediksi — mohon tunggu...")
+        st.info("📡 Mengambil data iklim dan melakukan prediksi — mohon tunggu...")
         # define prediction window
         total_hours = 7 * 24
         end_datetime = start_datetime + timedelta(hours=total_hours)
@@ -225,7 +225,7 @@ if st.button("Fetch Weather & Predict") and wl_hourly is not None:
 
         # iterative per-hour prediction
         df_pred["Water_level_pred"] = pd.NA
-        st.info("Melakukan prediksi per jam (bertahap)...")
+        st.info("Melakukan forecast")
         for dt in df_pred.index:
             # construct input dict
             inp = {}
