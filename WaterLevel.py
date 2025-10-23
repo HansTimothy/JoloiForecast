@@ -16,11 +16,7 @@ st.title("Water Level Hourly Prediction Dashboard 🌊")
 # -----------------------------
 # Pilih datetime start forecast
 # -----------------------------
-# Ambil waktu sekarang dan bulatkan ke jam bawah
-now = datetime.now()
-rounded_now = now.replace(minute=0, second=0, microsecond=0)
-
-# Pilihan tanggal
+# Pilih tanggal & jam start forecast
 st.subheader("Pilih Tanggal & Jam Start Forecast (Max: Sekarang)")
 
 selected_date = st.date_input(
@@ -33,12 +29,6 @@ selected_time = st.time_input(
     "Jam",
     value=time(rounded_now.hour, 0)
 )
-
-# gabungkan menjadi datetime
-start_datetime = datetime.combine(selected_date, selected_time)
-
-# Bentuk datetime
-start_datetime = datetime.combine(selected_date, time(selected_hour, 0))
 
 # gabungkan menjadi datetime
 start_datetime = datetime.combine(selected_date, selected_time)
