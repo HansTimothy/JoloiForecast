@@ -17,7 +17,11 @@ st.title("Water Level Forecast Dashboard 🌊")
 # waktu sekarang dibulatkan ke jam bawah
 tz = pytz.timezone("Etc/GMT-7")  # GMT+7
 now = datetime.now(tz)
-rounded_now = now.replace(minute=0, second=0, microsecond=0)
+
+if now.minute > 0 or now.second > 0 or now.microsecond > 0:
+    rounded_now = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+else:
+    rounded_now = now.replace(minute=0, second=0, microsecond=0)
 
 # -----------------------------
 # Pilih datetime start forecast
