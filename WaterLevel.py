@@ -63,11 +63,9 @@ if uploaded_file is not None:
         else:
             # Konversi ke datetime naive GMT+7
             df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]) + timedelta(hours=7)
-            df_wl["Datetime"] = df_wl["Datetime"].dt.floor("H").dt.tz_localize(None)
 
             # Filter 24 jam sebelum start
             wl_hourly = df_wl.groupby("Datetime")["Level Air"].mean().reset_index()
-            wl_hourly["Datetime"] = wl_hourly.index + pd.Timedelta(hours=7) 
             wl_hourly.rename(columns={"Level Air": "Water_level"}, inplace=True)
             st.success("Data water level berhasil diupload")
             st.dataframe(wl_hourly.style.format({"Water_level":"{:.2f}"}))
