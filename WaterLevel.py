@@ -79,7 +79,7 @@ if uploaded_file is not None:
         st.error(f"Gagal membaca file: {e}")
 
 # -----------------------------
-# Fetch data & predict
+# Fetch climate helper + Fetch & Predict block
 # -----------------------------
 def fetch_climate_data(start_dt, end_dt, mode="historical"):
     """
@@ -160,155 +160,151 @@ def fetch_climate_data(start_dt, end_dt, mode="historical"):
 # -----------------------------
 # Actual Fetch & Predict block
 # -----------------------------
-# -----------------------------
-# Fetch data & predict
-# -----------------------------
-if st.button("Fetch & Predict 🌦️"):
-    if wl_hourly is None:
-        st.error("Harap upload file water level terlebih dahulu.")
-    else:
-        try:
-            st.info("📡 Mengambil data iklim dari API... Mohon tunggu.")
+if st.button("Fetch Weather & Predict") and wl_hourly is not None:
+    try:
+        st.info("Mengambil data iklim dan melakukan prediksi — mohon tunggu...")
+        # define prediction window
+        total_hours = 7 * 24
+        end_datetime = start_datetime + timedelta(hours=total_hours)
+        now_gmt7 = datetime.utcnow() + timedelta(hours=7)
 
-            # ============================================
-            # 1. Tentukan periode data
-            # ============================================
-            now_gmt7 = datetime.utcnow() + timedelta(hours=7)
-            end_datetime = start_datetime + timedelta(days=7)
-            start_limit = start_datetime - timedelta(hours=24)
+        # historical range: we need at least 24h before start for water-level lag and up to min(end_datetime, now)
+        hist_start = (start_datetime - timedelta(hours=24))
+        hist_end = min(end_datetime, now_gmt7)
 
-            use_forecast = end_datetime > now_gmt7  # Jika ada periode ke depan
-            end_for_archive = min(end_datetime, now_gmt7)
+        # fetch historical (archive) for needed range [hist_start, hist_end)
+        df_hist = pd.DataFrame()
+        if hist_end > hist_start:
+            # archive endpoint requires start_date & end_date (dates). Use dates including hist_start.date() .. hist_end.date()
+            df_hist = fetch_climate_data(hist_start, hist_end, mode="historical")
 
-            # ============================================
-            # 2. Fungsi ambil data iklim
-            # ============================================
-            def fetch_climate_data(start_dt, end_dt, mode="historical"):
-                if mode == "historical":
-                    url = (
-                        f"https://archive-api.open-meteo.com/v1/archive?"
-                        f"latitude=-0.117&longitude=114.1"
-                        f"&start_date={start_dt.date()}&end_date={end_dt.date()}"
-                        f"&hourly=rain,cloud_cover,surface_pressure,"
-                        f"soil_temperature_0_to_7cm,soil_moisture_0_to_7cm"
-                        f"&timezone=Asia%2FSingapore"
-                    )
-                else:
-                    url = (
-                        f"https://api.open-meteo.com/v1/forecast?"
-                        f"latitude=-0.117&longitude=114.1"
-                        f"&hourly=rain,cloud_cover,surface_pressure,"
-                        f"soil_moisture_0_to_1cm,soil_temperature_0cm"
-                        f"&timezone=Asia%2FSingapore&forecast_days=14"
-                    )
+        # fetch forecast only for future window that historical doesn't cover
+        df_fore = pd.DataFrame()
+        if end_datetime > now_gmt7:
+            # forecast period: from max(now_gmt7, start_datetime) to end_datetime
+            fc_start = max(now_gmt7, start_datetime)
+            df_fore = fetch_climate_data(fc_start, end_datetime, mode="forecast")
 
-                r = requests.get(url)
-                r.raise_for_status()
-                data = r.json()
+        # combine weather data (prioritize historical for overlapping timestamps)
+        df_weather = pd.concat([df_hist, df_fore], ignore_index=True)
+        df_weather = df_weather.drop_duplicates(subset="Datetime", keep="first").sort_values("Datetime").reset_index(drop=True)
+        st.success(f"Data iklim siap — total records: {len(df_weather)}")
 
-                df = pd.DataFrame({
-                    "Datetime": pd.to_datetime(data["hourly"]["time"]),
-                    "Rainfall": data["hourly"]["rain"],
-                    "Cloud_cover": data["hourly"]["cloud_cover"],
-                    "Surface_pressure": data["hourly"]["surface_pressure"],
-                    "Soil_temperature": (
-                        data["hourly"]["soil_temperature_0_to_7cm"]
-                        if "soil_temperature_0_to_7cm" in data["hourly"]
-                        else data["hourly"]["soil_temperature_0cm"]
-                    ),
-                    "Soil_moisture": (
-                        data["hourly"]["soil_moisture_0_to_7cm"]
-                        if "soil_moisture_0_to_7cm" in data["hourly"]
-                        else data["hourly"]["soil_moisture_0_to_1cm"]
-                    ),
-                })
-                df["Datetime"] = df["Datetime"].dt.tz_localize(None)
-                return df
+        # prepare prediction frame for all hours from start_datetime
+        forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_hours)]
+        df_pred = pd.DataFrame({"Datetime": forecast_hours})
+        # merge weather (left join, so df_pred keeps all hours)
+        df_pred = df_pred.merge(df_weather, on="Datetime", how="left")
+        df_pred = df_pred.set_index("Datetime")
 
-            # ============================================
-            # 3. Ambil data iklim
-            # ============================================
-            climate_historical = fetch_climate_data(start_limit, end_for_archive, "historical")
+        # map uploaded water level to df_pred (these are the actual observed in last 24h)
+        wl_dict = dict(zip(wl_hourly["Datetime"], wl_hourly["Water_level"]))
+        df_pred["Water_level_actual"] = df_pred.index.map(wl_dict)
 
-            if use_forecast:
-                climate_forecast = fetch_climate_data(now_gmt7, end_datetime, "forecast")
-                climate_all = pd.concat([climate_historical, climate_forecast]).drop_duplicates("Datetime")
+        # prepare lag feature order
+        lag_features = []
+        for i in range(17, 25): lag_features.append(f"Rainfall_Lag{i}")
+        for i in range(1, 25):  lag_features.append(f"Cloud_cover_Lag{i}")
+        for i in range(1, 25):  lag_features.append(f"Surface_pressure_Lag{i}")
+        for i in range(9, 12):  lag_features.append(f"Soil_temperature_Lag{i}")
+        for i in range(1, 25):  lag_features.append(f"Soil_moisture_Lag{i}")
+        for i in range(1, 25):  lag_features.append(f"Water_level_Lag{i}")
+
+        # helper to safely pick value from df_pred (weather cols) by datetime
+        def _safe_weather(dt, col):
+            try:
+                return float(df_pred.at[dt, col]) if pd.notna(df_pred.at[dt, col]) else 0.0
+            except Exception:
+                return 0.0
+
+        # initial water level lags (lag1..lag24): use uploaded wl or 0.0 if missing
+        water_level_lags = []
+        for i in range(1, 25):
+            key = start_datetime - timedelta(hours=i)
+            water_level_lags.append(float(wl_dict.get(key, 0.0)))
+
+        # iterative per-hour prediction
+        df_pred["Water_level_pred"] = pd.NA
+        st.info("Melakukan prediksi per jam (bertahap)...")
+        for dt in df_pred.index:
+            # construct input dict
+            inp = {}
+            # Rainfall 17..24
+            for i in range(17, 25):
+                t = dt - timedelta(hours=i)
+                inp[f"Rainfall_Lag{i}"] = [ _safe_weather(t, "Rainfall") ]
+            # Cloud_cover 1..24
+            for i in range(1, 25):
+                t = dt - timedelta(hours=i)
+                inp[f"Cloud_cover_Lag{i}"] = [ _safe_weather(t, "Cloud_cover") ]
+            # Surface_pressure 1..24
+            for i in range(1, 25):
+                t = dt - timedelta(hours=i)
+                inp[f"Surface_pressure_Lag{i}"] = [ _safe_weather(t, "Surface_pressure") ]
+            # Soil_temperature 9..11
+            for i in range(9, 12):
+                t = dt - timedelta(hours=i)
+                inp[f"Soil_temperature_Lag{i}"] = [ _safe_weather(t, "Soil_temperature") ]
+            # Soil_moisture 1..24
+            for i in range(1, 25):
+                t = dt - timedelta(hours=i)
+                inp[f"Soil_moisture_Lag{i}"] = [ _safe_weather(t, "Soil_moisture") ]
+            # Water_level 1..24 (from rolling list)
+            for i in range(1, 25):
+                inp[f"Water_level_Lag{i}"] = [ water_level_lags[i - 1] ]
+
+            # create input dataframe in the same order as features
+            input_df = pd.DataFrame(inp)[lag_features].fillna(0.0)
+
+            # predict
+            pred_val = float(model.predict(input_df)[0])
+            df_pred.at[dt, "Water_level_pred"] = round(pred_val, 3)
+
+            # if there is an actual observed value for this dt (uploaded), prefer that as 'value to use' for next lags
+            actual = df_pred.at[dt, "Water_level_actual"] if "Water_level_actual" in df_pred.columns else pd.NA
+            if pd.notna(actual):
+                value_to_use = float(actual)
             else:
-                climate_all = climate_historical
+                value_to_use = pred_val
 
-            # ============================================
-            # 4. Gabungkan dengan data water level actual
-            # ============================================
-            df_all = pd.merge(climate_all, wl_hourly, on="Datetime", how="left")
-            df_all["Source"] = df_all["Water_level"].apply(lambda x: "Actual" if pd.notnull(x) else "Predicted")
+            # update rolling water_level_lags
+            water_level_lags = [float(value_to_use)] + water_level_lags[:-1]
 
-            # ============================================
-            # 5. Fungsi buat lag features
-            # ============================================
-            def create_lagged_features(df):
-                lag_features = []
-                for i in range(17,25): lag_features.append(f"Rainfall_Lag{i}")
-                for i in range(1,25): lag_features.append(f"Cloud_cover_Lag{i}")
-                for i in range(1,25): lag_features.append(f"Surface_pressure_Lag{i}")
-                for i in range(9,12): lag_features.append(f"Soil_temperature_Lag{i}")
-                for i in range(1,25): lag_features.append(f"Soil_moisture_Lag{i}")
-                for i in range(1,25): lag_features.append(f"Water_level_Lag{i}")
+        # prepare preview table
+        preview = df_pred.reset_index()[["Datetime", "Water_level_actual", "Water_level_pred", "Rainfall", "Cloud_cover", "Surface_pressure", "Soil_moisture", "Soil_temperature"]]
+        st.subheader("Preview (Actual & Predicted per hour)")
+        st.dataframe(preview.style.format({
+            "Water_level_actual":"{:.3f}", "Water_level_pred":"{:.3f}",
+            "Rainfall":"{:.3f}", "Cloud_cover":"{:.3f}", "Surface_pressure":"{:.3f}",
+            "Soil_moisture":"{:.3f}", "Soil_temperature":"{:.3f}"
+        }), height=480)
 
-                for feature in lag_features:
-                    base, lag = feature.split("_Lag")
-                    df[feature] = df[base].shift(int(lag))
-                return df, lag_features
-
-            # ============================================
-            # 6. Prediksi bertahap per jam (auto-lag)
-            # ============================================
-            df_all = df_all.sort_values("Datetime").reset_index(drop=True)
-            df_all, lag_features = create_lagged_features(df_all)
-
-            preds = []
-            for i in range(len(df_all)):
-                row = df_all.iloc[i]
-                if pd.isna(row["Water_level"]) and all(f in df_all.columns for f in lag_features):
-                    latest = df_all.iloc[i][lag_features].values.reshape(1, -1)
-                    y_pred = model.predict(latest)[0]
-                    df_all.at[i, "Water_level"] = y_pred
-                    df_all.at[i, "Source"] = "Predicted"
-                    preds.append((df_all.at[i, "Datetime"], y_pred))
-
-            # ============================================
-            # 7. Tampilkan tabel
-            # ============================================
-            st.success("✅ Data dan prediksi berhasil diproses.")
-            st.dataframe(
-                df_all[["Datetime", "Water_level", "Source", "Rainfall", "Cloud_cover",
-                        "Surface_pressure", "Soil_temperature", "Soil_moisture"]]
-                .tail(200)
-                .style.format({"Water_level": "{:.3f}"})
-            )
-
-            # ============================================
-            # 8. Plot hasil prediksi
-            # ============================================
-            fig = go.Figure()
-            df_actual = df_all[df_all["Source"] == "Actual"]
-            df_pred = df_all[df_all["Source"] == "Predicted"]
-
+        # plot: actual (if any) and predicted
+        fig = go.Figure()
+        # actual (input)
+        if wl_hourly is not None and not wl_hourly.empty:
             fig.add_trace(go.Scatter(
-                x=df_actual["Datetime"], y=df_actual["Water_level"],
-                mode="lines+markers", name="Actual", line=dict(color="green", dash="dot")
+                x=wl_hourly["Datetime"],
+                y=wl_hourly["Water_level"],
+                mode="lines+markers",
+                name="Observed (uploaded 24h)",
+                line=dict(color="green", dash="dot")
             ))
-            fig.add_trace(go.Scatter(
-                x=df_pred["Datetime"], y=df_pred["Water_level"],
-                mode="lines+markers", name="Predicted", line=dict(color="orange")
-            ))
+        # predicted
+        fig.add_trace(go.Scatter(
+            x=preview["Datetime"],
+            y=preview["Water_level_pred"],
+            mode="lines+markers",
+            name="Predicted (7×24h)",
+            line=dict(color="orange")
+        ))
 
-            fig.update_layout(
-                title="Water Level Forecast (7-Day)",
-                xaxis_title="Datetime (GMT+7)",
-                yaxis_title="Water Level (m)",
-                template="plotly_white"
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(title=f"Water Level Forecast starting {start_datetime} (GMT+7, naive)",
+                          xaxis_title="Datetime (GMT+7)",
+                          yaxis_title="Water Level",
+                          height=540)
+        st.plotly_chart(fig, use_container_width=True)
 
-        except Exception as e:
-            st.error(f"Terjadi kesalahan saat prediksi: {e}")
+        st.success("Fetch & Predict selesai.")
+    except Exception as e:
+        st.error(f"Terjadi kesalahan saat prediksi: {e}")
