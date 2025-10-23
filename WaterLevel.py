@@ -64,7 +64,7 @@ if uploaded_file is not None:
             st.error("File harus memiliki kolom 'Datetime' dan 'Level Air'")
         else:
             # ubah ke datetime GMT+7
-            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"])
+            df_wl["Datetime"] = df_wl["Datetime"].dt.tz_convert(None)
             
             # filter 24 jam sebelum start_datetime
             start_limit = start_datetime - timedelta(hours=24)
