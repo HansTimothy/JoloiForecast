@@ -42,6 +42,7 @@ selected_hour_str = st.selectbox(
     hour_options,
     index=len(hour_options)-1
 )
+
 selected_hour = int(selected_hour_str.split(":")[0])
 
 # Gabungkan menjadi naive datetime
@@ -53,7 +54,6 @@ st.write(f"Start datetime (GMT+7): {start_datetime}")
 # -----------------------------
 st.subheader("Upload Water Level File (Hourly)")
 uploaded_file = st.file_uploader("Upload file CSV AWLR Logs Joloi", type=["csv"])
-
 wl_hourly = None
 if uploaded_file is not None:
     try:
@@ -61,23 +61,31 @@ if uploaded_file is not None:
         if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
             st.error("File harus memiliki kolom 'Datetime' dan 'Level Air'")
         else:
-            # ubah ke datetime naive dan floor jam
-            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]) + timedelta(hours=7)  # GMT+7
-            df_wl["Datetime"] = df_wl["Datetime"].dt.floor("H")  # Naive
-            df_wl["Datetime"] = df_wl["Datetime"].dt.tz_localize(None)
+            # Konversi ke datetime naive GMT+7
+            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]) + timedelta(hours=7)
+            df_wl["Datetime"] = df_wl["Datetime"].dt.floor("H").dt.tz_localize(None)
 
-            # filter 24 jam sebelum start_datetime
-            start_limit = start_datetime - timedelta(hours=24)
-            df_wl = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
-            
-            # group by jam
+            # Filter 24 jam sebelum start
             wl_hourly = df_wl.groupby("Datetime")["Level Air"].mean().reset_index()
             wl_hourly.rename(columns={"Level Air": "Water_level"}, inplace=True)
-            
-            st.success(f"Data water level berhasil diupload")
+            st.success("Data water level berhasil diupload")
             st.dataframe(wl_hourly.style.format({"Water_level":"{:.2f}"}))
     except Exception as e:
         st.error(f"Gagal membaca file: {e}")
+
+# -----------------------------
+# Jam input sesuai data water level
+# -----------------------------
+if wl_hourly is not None and not wl_hourly.empty:
+    max_hour = wl_hourly["Datetime"].dt.hour.max()
+else:
+    max_hour = rounded_now.hour
+
+hour_options = [f"{h:02d}:00" for h in range(0, max_hour+1)]
+selected_hour_str = st.selectbox("Jam", hour_options, index=len(hour_options)-1)
+selected_hour = int(selected_hour_str.split(":")[0])
+start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
+st.write(f"Start datetime (GMT+7): {start_datetime}")
 
 # -----------------------------
 # Fetch_climate_data + Fetch & Predict
