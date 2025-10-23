@@ -4,7 +4,7 @@ import pandas as pd
 import requests
 import joblib
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 
 # -----------------------------
 # Load trained model
