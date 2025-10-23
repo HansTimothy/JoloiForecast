@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, date
 # -----------------------------
 # Load trained model
 # -----------------------------
-model = joblib.load("best_model.pkl")
+model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 
 st.title("Water Level Prediction Dashboard 🌊")
 
