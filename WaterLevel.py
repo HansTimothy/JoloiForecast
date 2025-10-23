@@ -3,9 +3,9 @@ import streamlit as st
 import pandas as pd
 import requests
 import joblib
+import pytz
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, time
-from zoneinfo import ZoneInfo
 
 # -----------------------------
 # Load trained model
@@ -15,7 +15,8 @@ model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 st.title("Water Level Hourly Prediction Dashboard 🌊")
 
 # waktu sekarang dibulatkan ke jam bawah
-sg_now = datetime.now(ZoneInfo("Asia/Singapore"))
+sg_tz = pytz.timezone("Asia/Singapore")
+sg_now = datetime.now(sg_tz)
 rounded_now = sg_now.replace(minute=0, second=0, microsecond=0)
 
 # -----------------------------
