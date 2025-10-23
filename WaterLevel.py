@@ -64,7 +64,7 @@ if uploaded_file is not None:
             st.error("File harus memiliki kolom 'Datetime' dan 'Level Air'")
         else:
             # ubah ke datetime GMT+7
-            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.tz_localize(tz)
+            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"])
             
             # filter 24 jam sebelum start_datetime
             start_limit = start_datetime - timedelta(hours=24)
@@ -75,7 +75,7 @@ if uploaded_file is not None:
             wl_hourly = df_wl.groupby("Hour")["Level Air"].mean().reset_index()
             wl_hourly.rename(columns={"Hour": "Datetime", "Level Air": "Water_level"}, inplace=True)
             
-            st.success(f"Data water level berhasil diupload)")
+            st.success(f"Data water level berhasil diupload")
             st.dataframe(wl_hourly.style.format({"Water_level":"{:.2f}"}))
     except Exception as e:
         st.error(f"Gagal membaca file: {e}")
