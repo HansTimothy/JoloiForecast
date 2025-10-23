@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, time
 # -----------------------------
 model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 
-st.title("Water Level Hourly Prediction Dashboard 🌊")
+st.title("Water Level Forecast Dashboard 🌊")
 
 # waktu sekarang dibulatkan ke jam bawah
 tz = pytz.timezone("Etc/GMT-7")  # GMT+7
@@ -23,7 +23,7 @@ rounded_now = now.replace(minute=0, second=0, microsecond=0)
 # Pilih datetime start forecast
 # -----------------------------
 # Pilih tanggal & jam start forecast
-st.subheader("Pilih Tanggal & Jam Start Forecast (Max: Sekarang)")
+st.subheader("Pilih Tanggal & Jam Mulai 7-Day Forecast")
 
 selected_date = st.date_input(
     "Tanggal",
@@ -33,7 +33,7 @@ selected_date = st.date_input(
 
 hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
 selected_hour_str = st.selectbox(
-    "Jam (HH:00)",
+    "Jam",
     hour_options,
     index=len(hour_options)-1
 )
