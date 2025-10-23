@@ -81,69 +81,60 @@ if uploaded_file is not None:
 # Fungsi fetch climate historis
 # -----------------------------
 def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.100):
-    """
-    Ambil data historis cuaca dari Open-Meteo API
-    start_dt, end_dt: datetime naive GMT+7
-    return: DataFrame
-    """
-    start_utc = (start_dt).isoformat()
-    end_utc = (end_dt).isoformat()
-
-    st.write(f"Fetching climate data from {start_utc} to {end_utc}")
+    start_date = start_dt.date().isoformat()
+    end_date = end_dt.date().isoformat()
+    
+    st.info(f"Fetching climate data from {start_date} to {end_date}")
 
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={lat}&longitude={lon}"
-        f"&start={start_utc}&end={end_utc}"
-        f"&hourly=temperature_2m,surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm&timezone=Asia%2FBangkok"
+        f"&start={start_date}&end={end_date}"
+        f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain&timezone=Asia%2FBangkok"
         
     )
 
     try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        j = resp.json()
+        
+        
         r = requests.get(url)
         data = r.json()
+        
+        # Buat dataframe
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
-            "Temperature": data["hourly"]["temperature_2m"],
             "Pressure": data["hourly"]["surface_pressure"],
             "Cloud_cover": data["hourly"]["cloud_cover"],
             "Soil_temp": data["hourly"]["soil_temperature_0_to_7cm"],
-            "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"]
+            "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"],
+            "Rain": data["hourly"]["rain"]
         })
-        # Convert ke GMT+7
-        df["Datetime"] = df["Datetime"] + timedelta(hours=7)
+        
         df["Datetime"] = df["Datetime"].dt.floor("H")
+        
         return df
-    except Exception as e:
-        st.error(f"Gagal fetch climate data: {e}")
-        return None
-
-# -----------------------------
-# Tombol fetch climate data
-# -----------------------------
-climate_df = None
-merged_df = None
-
-if wl_hourly is not None:
-    if st.button("Fetch Climate Data 24h"):
-        start_limit = start_datetime - timedelta(hours=24)
-        climate_df = fetch_climate_historical(start_limit, start_datetime)
-        if climate_df is not None:
-            merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
-
-            # Pastikan kolom numerik
-            numeric_cols = ["Water_level", "Temperature", "Pressure", "Cloud_cover", "Soil_temp", "Soil_moisture"]
-            for col in numeric_cols:
-                if col in merged_df.columns:
-                    merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce')
-            merged_df.fillna(0, inplace=True)
-
-            st.subheader("Preview Water Level + Climate Data 24 Jam Sebelumnya")
-            st.dataframe(merged_df.round({
-                "Water_level": 2,
-                "Temperature": 2,
-                "Pressure": 2,
-                "Cloud_cover": 2,
-                "Soil_temp": 2,
-                "Soil_moisture": 3
-            }))
+    
+    # -----------------------------
+    # Contoh merge dengan water level
+    # -----------------------------
+    if 'wl_hourly' in locals() and wl_hourly is not None:
+        start_dt = wl_hourly["Datetime"].min()
+        end_dt = wl_hourly["Datetime"].max()
+        
+        climate_df = fetch_climate_historical(start_dt, end_dt)
+        
+        # Merge on Datetime
+        merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
+        
+        # Pastikan numerik
+        numeric_cols = ["Water_level","Pressure","Cloud_cover","Soil_temp","Soil_moisture","Rain"]
+        for col in numeric_cols:
+            if col in merged_df.columns:
+                merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce')
+        merged_df.fillna(0, inplace=True)
+        
+        st.subheader("Merged Water Level + Climate Data")
+        st.dataframe(merged_df.round(2))
