@@ -46,7 +46,7 @@ selected_hour = int(selected_hour_str.split(":")[0])
 
 # Gabungkan menjadi naive datetime
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
-st.write(f"Start datetime (GMT+7, naive): {start_datetime}")
+st.write(f"Start datetime (GMT+7): {start_datetime}")
 
 # -----------------------------
 # Upload water level file
@@ -74,7 +74,7 @@ if uploaded_file is not None:
             wl_hourly = df_wl.groupby("Datetime")["Level Air"].mean().reset_index()
             wl_hourly.rename(columns={"Level Air": "Water_level"}, inplace=True)
             
-            st.success(f"Data water level berhasil diupload ({len(wl_hourly)} jam)")
+            st.success(f"Data water level berhasil diupload")
             st.dataframe(wl_hourly.style.format({"Water_level":"{:.2f}"}))
     except Exception as e:
         st.error(f"Gagal membaca file: {e}")
