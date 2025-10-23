@@ -16,22 +16,27 @@ st.title("Water Level Hourly Prediction Dashboard 🌊")
 # -----------------------------
 # Pilih datetime start forecast
 # -----------------------------
+# Ambil waktu sekarang dan bulatkan ke jam bawah
 now = datetime.now()
 rounded_now = now.replace(minute=0, second=0, microsecond=0)
 
-# Pilih tanggal & jam start forecast
-st.subheader("Pilih Tanggal & Jam Start Forecast (Max: Sekarang)")
-
+# Pilihan tanggal
 selected_date = st.date_input(
     "Tanggal",
     value=rounded_now.date(),
     max_value=rounded_now.date()
 )
 
-selected_time = st.time_input(
-    "Jam",
-    value=time(rounded_now.hour, 0)
+# Pilihan jam, batasi maksimal jam ke jam sekarang rounded ke bawah
+hour_options = list(range(0, rounded_now.hour + 1))
+selected_hour = st.selectbox(
+    "Jam (HH)",
+    hour_options,
+    index=hour_options.index(rounded_now.hour)
 )
+
+# Bentuk datetime
+start_datetime = datetime.combine(selected_date, time(selected_hour, 0))
 
 # gabungkan menjadi datetime
 start_datetime = datetime.combine(selected_date, selected_time)
@@ -40,7 +45,7 @@ start_datetime = datetime.combine(selected_date, selected_time)
 # Upload water level file
 # -----------------------------
 st.subheader("Upload Water Level File (Hourly)")
-uploaded_file = st.file_uploader("Upload file CSV AWLR Logs", type=["csv", "txt"])
+uploaded_file = st.file_uploader("Upload file CSV AWLR Logs Joloi", type=["csv"])
 
 wl_hourly = None
 if uploaded_file is not None:
