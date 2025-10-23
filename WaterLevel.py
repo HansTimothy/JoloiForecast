@@ -80,7 +80,7 @@ if uploaded_file is not None:
 # -----------------------------
 # Fungsi fetch climate historis
 # -----------------------------
-def fetch_climate_historical(start_dt, end_dt, lat=-0.10544816, lon=114.20109):
+def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.100):
     """
     Ambil data historis cuaca dari Open-Meteo API
     start_dt, end_dt: datetime naive GMT+7
@@ -127,12 +127,20 @@ if wl_hourly is not None:
         climate_df = fetch_climate_historical(start_limit, start_datetime)
         if climate_df is not None:
             merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
+
+            # Pastikan kolom numerik
+            numeric_cols = ["Water_level", "Temperature", "Pressure", "Cloud_cover", "Soil_temp", "Soil_moisture"]
+            for col in numeric_cols:
+                if col in merged_df.columns:
+                    merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce')
+            merged_df.fillna(0, inplace=True)
+
             st.subheader("Preview Water Level + Climate Data 24 Jam Sebelumnya")
-            st.dataframe(merged_df.style.format({
-                "Water_level":"{:.2f}",
-                "Temperature":"{:.2f}",
-                "Pressure":"{:.2f}",
-                "Cloud_cover":"{:.2f}",
-                "Soil_temp":"{:.2f}",
-                "Soil_moisture":"{:.3f}"
+            st.dataframe(merged_df.round({
+                "Water_level": 2,
+                "Temperature": 2,
+                "Pressure": 2,
+                "Cloud_cover": 2,
+                "Soil_temp": 2,
+                "Soil_moisture": 3
             }))
