@@ -21,19 +21,21 @@ now = datetime.now()
 rounded_now = now.replace(minute=0, second=0, microsecond=0)
 
 # Pilihan tanggal
+st.subheader("Pilih Tanggal & Jam Start Forecast (Max: Sekarang)")
+
 selected_date = st.date_input(
     "Tanggal",
     value=rounded_now.date(),
     max_value=rounded_now.date()
 )
 
-# Pilihan jam, batasi maksimal jam ke jam sekarang rounded ke bawah
-hour_options = list(range(0, rounded_now.hour + 1))
-selected_hour = st.selectbox(
-    "Jam (HH)",
-    hour_options,
-    index=hour_options.index(rounded_now.hour)
+selected_time = st.time_input(
+    "Jam",
+    value=time(rounded_now.hour, 0)
 )
+
+# gabungkan menjadi datetime
+start_datetime = datetime.combine(selected_date, selected_time)
 
 # Bentuk datetime
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0))
