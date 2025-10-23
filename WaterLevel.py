@@ -86,8 +86,10 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.100):
     start_dt, end_dt: datetime naive GMT+7
     return: DataFrame
     """
-    start_utc = (start_dt - timedelta(hours=7)).isoformat()
-    end_utc = (end_dt - timedelta(hours=7)).isoformat()
+    start_utc = (start_dt).isoformat()
+    end_utc = (end_dt).isoformat()
+
+    st.write(f"Fetching climate data from {start_utc} to {end_utc}")
 
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
