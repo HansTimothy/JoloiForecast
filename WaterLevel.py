@@ -80,7 +80,7 @@ if uploaded_file is not None:
 # -----------------------------
 # Fungsi fetch climate historis
 # -----------------------------
-def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.100):
+def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
     start_date = start_dt.date().isoformat()
     end_date = end_dt.date().isoformat()
     
@@ -89,7 +89,7 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.100):
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={lat}&longitude={lon}"
-        f"&start={start_date}&end={end_date}"
+        f"&start_date={start_date}&end_date={end_date}"
         f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain"
         f"&timezone=Asia%2FBangkok"
     )
