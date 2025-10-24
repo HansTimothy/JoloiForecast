@@ -5,6 +5,7 @@ import joblib
 import numpy as np
 from datetime import datetime, timedelta, time
 from xgboost import XGBRegressor
+import time as t
 from io import BytesIO
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
@@ -35,7 +36,7 @@ else:
 st.subheader("Select Start Date & Time for 7-Day Forecast")
 selected_date = st.date_input("Date", value=rounded_now.date(), max_value=rounded_now.date())
 hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
-selected_hour_str = st.selectbox("Time", hour_options, index=len(hour_options)-1)
+selected_hour_str = st.selectbox("Hour", hour_options, index=len(hour_options)-1)
 selected_hour = int(selected_hour_str.split(":")[0])
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
@@ -56,15 +57,8 @@ st.info(
 # -----------------------------
 # Upload water level data
 # -----------------------------
-st.subheader("Upload Water Level File")
+st.subheader("Upload Hourly Water Level File")
 uploaded_file = st.file_uploader("Upload CSV File (AWLR Joloi Logs)", type=["csv"])
-
-# Gunakan session_state supaya file tidak hilang
-if uploaded_file is not None:
-    st.session_state["uploaded_file"] = uploaded_file
-else:
-    uploaded_file = st.session_state.get("uploaded_file", None)
-
 wl_hourly = None
 upload_success = False
 
@@ -93,30 +87,11 @@ if uploaded_file is not None:
                     .sort_values(by="Datetime", ascending=True)
                     .round(2)
                 )
-                st.success("File uploaded successfully!")
+                st.success("✅ File uploaded successfully!")
                 st.dataframe(wl_hourly)
 
     except Exception as e:
         st.error(f"Failed to read file: {e}")
-
-# -----------------------------
-# Reset forecast if inputs change
-# -----------------------------
-if "last_inputs" not in st.session_state:
-    st.session_state["last_inputs"] = {"date": None, "hour": None, "file_uploaded": None}
-
-inputs_changed = (
-    st.session_state["last_inputs"]["date"] != selected_date or
-    st.session_state["last_inputs"]["hour"] != selected_hour or
-    st.session_state["last_inputs"]["file_uploaded"] != uploaded_file
-)
-
-if inputs_changed:
-    st.session_state["forecast_done"] = False
-    st.session_state["final_df"] = None
-    st.session_state["last_inputs"]["date"] = selected_date
-    st.session_state["last_inputs"]["hour"] = selected_hour
-    st.session_state["last_inputs"]["file_uploaded"] = uploaded_file
 
 # -----------------------------
 # Fetch climate functions
@@ -259,43 +234,44 @@ if st.session_state.get("forecast_done", False):
     rmse_est = 0.06
     fig = go.Figure()
     
-    hist_df = final_df[final_df["Source"]=="Historical"]
+    # 2️⃣ Forecast line (tersambung dengan titik Historical terakhir)
     forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
-    
-    # 1️⃣ Historical trace
-    fig.add_trace(go.Scatter(
-        x=hist_df["Datetime"],
-        y=hist_df["Water_level"],
-        mode="lines+markers",
-        name="Historical",
-        line=dict(color="blue", width=2),
-        marker=dict(size=4),
-        hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
-    ))
-    
-    # 2️⃣ Forecast trace, mulai dari historical terakhir untuk koneksi visual
     if not forecast_df_plot.empty:
-        # Gabungkan titik terakhir historical dengan forecast pertama untuk visual continuity
-        x_forecast = pd.concat([pd.Series([hist_df["Datetime"].iloc[-1]]), forecast_df_plot["Datetime"]])
-        y_forecast = pd.concat([pd.Series([hist_df["Water_level"].iloc[-1]]), forecast_df_plot["Water_level"]])
-        
+        # Ambil titik terakhir Historical
+        last_hist_time = hist_df["Datetime"].iloc[-1]
+        last_hist_value = hist_df["Water_level"].iloc[-1]
+    
+        # Gabungkan dengan Forecast
+        forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
+        forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level"]])
+    
         fig.add_trace(go.Scatter(
-            x=x_forecast,
-            y=y_forecast,
+            x=forecast_plot_x,
+            y=forecast_plot_y,
             mode="lines+markers",
             name="Forecast",
-            line=dict(color="orange", width=2),
+            line=dict(color="orange"),
             marker=dict(size=4),
-            # Hanya forecast point (exclude historical last) yang muncul di hover
-            hovertemplate=[None] + [f"Datetime: {dt}<br>Forecast Water Level: {wl:.2f} m" 
-                                    for dt, wl in zip(forecast_df_plot["Datetime"], forecast_df_plot["Water_level"])]
+            hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
+        ))
+
+        # 1️⃣ Historical line
+        hist_df = final_df[final_df["Source"]=="Historical"]
+        fig.add_trace(go.Scatter(
+            x=hist_df["Datetime"],
+            y=hist_df["Water_level"],
+            mode="lines+markers",
+            name="Historical",
+            line=dict(color="blue"),
+            marker=dict(size=4),
+            hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
         ))
     
-        # RMSE shading
-        rmse_y_upper = forecast_df_plot["Water_level"] + rmse_est
-        rmse_y_lower = (forecast_df_plot["Water_level"] - rmse_est).clip(0)
+        # 3️⃣ RMSE area
+        rmse_y_upper = (forecast_plot_y + rmse_est)
+        rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
         fig.add_trace(go.Scatter(
-            x=pd.concat([forecast_df_plot["Datetime"], forecast_df_plot["Datetime"][::-1]]),
+            x=pd.concat([forecast_plot_x, forecast_plot_x[::-1]]),
             y=pd.concat([rmse_y_upper, rmse_y_lower[::-1]]),
             fill='toself',
             fillcolor='rgba(255,165,0,0.2)',
