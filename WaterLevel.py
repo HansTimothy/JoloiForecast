@@ -318,9 +318,9 @@ if st.session_state.get("forecast_done", False):
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.download_button("📄 CSV", csv_buffer, "water_level_forecast.csv", "text/csv", use_container_width=True)
+        st.download_button("Download CSV", csv_buffer, "water_level_forecast.csv", "text/csv", use_container_width=True)
     with col2:
-        st.download_button("📘 Excel", excel_buffer, "water_level_forecast.xlsx",
+        st.download_button("Download Excel", excel_buffer, "water_level_forecast.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with col3:
-        st.download_button("📑 PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
+        st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
