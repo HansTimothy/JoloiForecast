@@ -7,3 +7,4 @@ joblib
 plotly
 pytz
 XlsxWriter
+openpyxl
