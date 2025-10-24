@@ -6,7 +6,9 @@ import numpy as np
 from datetime import datetime, timedelta, time
 from xgboost import XGBRegressor
 from reportlab.lib.pagesizes import landscape, A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 import time as t
 import io
