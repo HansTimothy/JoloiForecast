@@ -39,12 +39,12 @@ st.write(f"Start datetime (GMT+7): {start_datetime}")
 st.subheader("Upload Hourly Water Level File")
 uploaded_file = st.file_uploader("Upload CSV File (AWLR Joloi Logs)", type=["csv"])
 wl_hourly = None
+ready_for_forecast = False  # kontrol tombol forecast
 
 if uploaded_file is not None:
+    placeholder_msg = st.empty()  # placeholder untuk message
     try:
         df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
-        placeholder_msg = st.empty()  # placeholder untuk message
-
         if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
             placeholder_msg.error("The file must contain columns 'Datetime' and 'Level Air'.")
             time.sleep(10)
@@ -63,7 +63,6 @@ if uploaded_file is not None:
                 placeholder_msg.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
                 time.sleep(10)
                 placeholder_msg.empty()
-                wl_hourly = None  # pastikan tidak ada data yang diproses
             else:
                 wl_hourly = (
                     df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
@@ -74,80 +73,80 @@ if uploaded_file is not None:
                 placeholder_msg.success("Successfully uploaded 24-hour water level data before start time.")
                 time.sleep(10)
                 placeholder_msg.empty()
+                st.dataframe(wl_hourly, use_container_width=True, height=400)
+                ready_for_forecast = True  # tombol forecast bisa muncul
 
     except Exception as e:
-        placeholder_msg = st.empty()
         placeholder_msg.error(f"Failed to read file: {e}")
         time.sleep(10)
         placeholder_msg.empty()
 
 # -----------------------------
-# Fetch climate functions
+# Jika data siap, tampilkan tombol forecast
 # -----------------------------
-def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
-    start_date = start_dt.date().isoformat()
-    end_date = end_dt.date().isoformat()
-    url = (
-        f"https://archive-api.open-meteo.com/v1/archive?"
-        f"latitude={lat}&longitude={lon}"
-        f"&start_date={start_date}&end_date={end_date}"
-        f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain"
-        f"&timezone=Asia%2FBangkok"
-    )
-    try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        df = pd.DataFrame({
-            "Datetime": pd.to_datetime(data["hourly"]["time"]),
-            "Rainfall": data["hourly"]["rain"],
-            "Cloud_cover": data["hourly"]["cloud_cover"],
-            "Surface_pressure": data["hourly"]["surface_pressure"],
-            "Soil_temperature": data["hourly"]["soil_temperature_0_to_7cm"],
-            "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"]
-        })
-        df["Datetime"] = df["Datetime"].dt.floor("H")
-        return df
-    except Exception as e:
-        st.error(f"Failed to fetch climate data: {e}")
-        return pd.DataFrame()
-
-def fetch_climate_forecast(lat=-0.117, lon=114.1):
-    url = (
-        f"https://api.open-meteo.com/v1/forecast?"
-        f"latitude={lat}&longitude={lon}"
-        f"&hourly=rain,surface_pressure,cloud_cover,soil_moisture_0_to_1cm,soil_temperature_0cm"
-        f"&timezone=Asia%2FBangkok&forecast_days=14"
-    )
-    try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        df = pd.DataFrame({
-            "Datetime": pd.to_datetime(data["hourly"]["time"]),
-            "Rainfall": data["hourly"]["rain"],
-            "Cloud_cover": data["hourly"]["cloud_cover"],
-            "Surface_pressure": data["hourly"]["surface_pressure"],
-            "Soil_temperature": data["hourly"]["soil_temperature_0cm"],
-            "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"]
-        })
-        df["Datetime"] = df["Datetime"].dt.floor("H")
-        return df
-    except Exception as e:
-        st.error(f"Failed to fetch climate data: {e}")
-        return pd.DataFrame()
-
-# -----------------------------
-# Run 7-Day Forecast
-# -----------------------------
-if wl_hourly is not None and st.button("Run 7-Day Forecast"):
-    # Lanjutkan proses forecast hanya jika wl_hourly valid (tidak ada missing hour)
+if ready_for_forecast and st.button("Run 7-Day Forecast"):
     progress_container = st.empty()
     progress_bar = st.progress(0)
     total_steps = 3 + 168
     step_counter = 0
 
+    # -----------------------------
+    # Fetch climate functions
+    # -----------------------------
+    def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
+        start_date = start_dt.date().isoformat()
+        end_date = end_dt.date().isoformat()
+        url = (
+            f"https://archive-api.open-meteo.com/v1/archive?"
+            f"latitude={lat}&longitude={lon}"
+            f"&start_date={start_date}&end_date={end_date}"
+            f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain"
+            f"&timezone=Asia%2FBangkok"
+        )
+        try:
+            resp = requests.get(url, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            df = pd.DataFrame({
+                "Datetime": pd.to_datetime(data["hourly"]["time"]),
+                "Rainfall": data["hourly"]["rain"],
+                "Cloud_cover": data["hourly"]["cloud_cover"],
+                "Surface_pressure": data["hourly"]["surface_pressure"],
+                "Soil_temperature": data["hourly"]["soil_temperature_0_to_7cm"],
+                "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"]
+            })
+            df["Datetime"] = df["Datetime"].dt.floor("H")
+            return df
+        except:
+            return pd.DataFrame()
+
+    def fetch_climate_forecast(lat=-0.117, lon=114.1):
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?"
+            f"latitude={lat}&longitude={lon}"
+            f"&hourly=rain,surface_pressure,cloud_cover,soil_moisture_0_to_1cm,soil_temperature_0cm"
+            f"&timezone=Asia%2FBangkok&forecast_days=14"
+        )
+        try:
+            resp = requests.get(url, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            df = pd.DataFrame({
+                "Datetime": pd.to_datetime(data["hourly"]["time"]),
+                "Rainfall": data["hourly"]["rain"],
+                "Cloud_cover": data["hourly"]["cloud_cover"],
+                "Surface_pressure": data["hourly"]["surface_pressure"],
+                "Soil_temperature": data["hourly"]["soil_temperature_0cm"],
+                "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"]
+            })
+            df["Datetime"] = df["Datetime"].dt.floor("H")
+            return df
+        except:
+            return pd.DataFrame()
+
+    # -----------------------------
     # 1️⃣ Fetch climate data
+    # -----------------------------
     progress_container.markdown("Fetching climate data...")
     start_dt = wl_hourly["Datetime"].min()
     end_dt = wl_hourly["Datetime"].max()
@@ -167,7 +166,9 @@ if wl_hourly is not None and st.button("Run 7-Day Forecast"):
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
+    # -----------------------------
     # 2️⃣ Merge data
+    # -----------------------------
     progress_container.markdown("Merging water level and climate data...")
     merged_df = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
     merged_df["Source"] = "Historical"
@@ -179,7 +180,9 @@ if wl_hourly is not None and st.button("Run 7-Day Forecast"):
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
+    # -----------------------------
     # 3️⃣ Iterative forecast
+    # -----------------------------
     progress_container.markdown("Forecasting water level for 7 days...")
     model_features = model.get_booster().feature_names
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
@@ -206,7 +209,9 @@ if wl_hourly is not None and st.button("Run 7-Day Forecast"):
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
+    # -----------------------------
     # Display final dataframe
+    # -----------------------------
     st.subheader("Water Level + Climate Data with Forecast")
     def highlight_forecast(row):
         color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
