@@ -186,7 +186,6 @@ if wl_hourly is not None:
         # -----------------------------
         # Predict water level step by step
         # -----------------------------
-        preds = []
         for i, row in forecast_df.iterrows():
             current_time = row["Datetime"]
             lag_features = build_lag_features(full_df, current_time)
@@ -196,12 +195,28 @@ if wl_hourly is not None:
                     lag_features[col] = 0
             feature_df = pd.DataFrame([lag_features])[feature_cols]
             pred = model.predict(feature_df)[0]
-            preds.append(pred)
-            # Masukkan prediksi ke full_df supaya bisa dipakai untuk lag berikutnya
+            # Minimal 0
+            pred = max(0, round(pred, 2))
+            # Masukkan prediksi ke full_df supaya dipakai untuk lag berikutnya
             full_df.loc[full_df["Datetime"] == current_time, "Water_level"] = pred
+
+        # -----------------------------
+        # Round semua kolom numerik
+        # -----------------------------
+        for col in full_df.select_dtypes(include=np.number).columns:
+            full_df[col] = full_df[col].round(2)
+
+        # -----------------------------
+        # Highlight forecast rows biru
+        # -----------------------------
+        def highlight_forecast(row):
+            color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
+            return [color] * len(row)
+
+        styled_df = full_df.style.apply(highlight_forecast, axis=1)
 
         # -----------------------------
         # Display table
         # -----------------------------
         st.subheader("Water Level + Climate Data + Forecast")
-        st.dataframe(full_df, use_container_width=True, height=500)
+        st.dataframe(styled_df, use_container_width=True, height=500)
