@@ -149,74 +149,73 @@ def build_lag_features(df, current_time, max_lags=24):
     return lagged
 
 # -----------------------------
-# Fetch climate & forecasting button
+# Fetch Data & Forecasting
 # -----------------------------
 if wl_hourly is not None:
     if st.button("Fetch Climate Data & Forecasting"):
-        # Historical data
-        start_dt = wl_hourly["Datetime"].min()
-        end_dt = wl_hourly["Datetime"].max()
-        climate_hist = fetch_climate_historical(start_dt, end_dt)
+        with st.spinner("Fetching climate data and forecasting water level, please wait... ⏳"):
+            start_dt = wl_hourly["Datetime"].min()
+            end_dt = wl_hourly["Datetime"].max()
+            climate_df = fetch_climate_historical(start_dt, end_dt)
 
-        merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
-        merged_hist["Source"] = "Historical"
+            merged_df = (
+                pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
+                .sort_values(by="Datetime", ascending=True)
+            )
 
-        # Forecast 7x24h
-        forecast_hours = [start_datetime + timedelta(hours=i) for i in range(1, 168+1)]
-        forecast_df = pd.DataFrame({"Datetime": forecast_hours})
-        forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
+            # Generate next 7x24 hours
+            next_hours = [start_datetime + timedelta(hours=i) for i in range(1, 168 + 1)]
+            forecast_df = pd.DataFrame({"Datetime": next_hours})
+            forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
 
-        if forecast_end < gmt7_now:
-            climate_fore = fetch_climate_historical(forecast_start, forecast_end)
-        elif forecast_start > gmt7_now:
-            climate_fore = fetch_climate_forecast()
-        else:
-            climate_fore = pd.concat([
-                fetch_climate_historical(forecast_start, gmt7_now),
-                fetch_climate_forecast()
-            ]).drop_duplicates(subset="Datetime")
+            # Determine source of climate data
+            if forecast_end < gmt7_now:
+                add_df = fetch_climate_historical(forecast_start, forecast_end)
+            elif forecast_start > gmt7_now:
+                add_df = fetch_climate_forecast()
+            else:
+                hist_df = fetch_climate_historical(forecast_start, gmt7_now)
+                fore_df = fetch_climate_forecast()
+                add_df = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
 
-        forecast_df = pd.merge(forecast_df, climate_fore, on="Datetime", how="left")
-        forecast_df["Water_level"] = np.nan
-        forecast_df["Source"] = "Forecast"
+            forecast_merged = pd.merge(forecast_df, add_df, on="Datetime", how="left")
+            forecast_merged["Water_level"] = np.nan
+            forecast_merged["Source"] = "Forecast"
 
-        # Combine
-        full_df = pd.concat([merged_hist, forecast_df], ignore_index=True).sort_values("Datetime").reset_index(drop=True)
+            merged_df["Source"] = "Historical"
 
-        # -----------------------------
-        # Predict water level step by step
-        # -----------------------------
-        for i, row in forecast_df.iterrows():
-            current_time = row["Datetime"]
-            lag_features = build_lag_features(full_df, current_time)
-            # Pastikan urut sesuai feature_cols
-            for col in feature_cols:
-                if col not in lag_features:
-                    lag_features[col] = 0
-            feature_df = pd.DataFrame([lag_features])[feature_cols]
-            pred = model.predict(feature_df)[0]
-            # Minimal 0
-            pred = max(0, round(pred, 2))
-            # Masukkan prediksi ke full_df supaya dipakai untuk lag berikutnya
-            full_df.loc[full_df["Datetime"] == current_time, "Water_level"] = pred
+            full_df = pd.concat([merged_df, forecast_merged], ignore_index=True).sort_values(by="Datetime")
 
-        # -----------------------------
-        # Round semua kolom numerik
-        # -----------------------------
-        for col in full_df.select_dtypes(include=np.number).columns:
-            full_df[col] = full_df[col].round(2)
+            # -----------------------------
+            # Predict water level 7x24 hours step by step
+            # -----------------------------
+            feature_cols = [c for c in model.get_booster().feature_names]
+            for i, row in forecast_merged.iterrows():
+                feature_values = []
+                for col in feature_cols:
+                    base, lag = col.rsplit("_Lag", 1)
+                    lag = int(lag)
+                    lag_time = row["Datetime"] - pd.Timedelta(hours=lag)
+                    if base == "Water_level":
+                        val = full_df.loc[full_df["Datetime"] == lag_time, "Water_level"].values
+                    else:
+                        val = full_df.loc[full_df["Datetime"] == lag_time, base].values
+                    feature_values.append(val[0] if len(val) > 0 else 0)
+                feature_df = pd.DataFrame([feature_values], columns=feature_cols)
+                pred = model.predict(feature_df)[0]
+                pred = max(0, round(pred, 2))  # minimal 0 dan 2 desimal
+                full_df.loc[full_df["Datetime"] == row["Datetime"], "Water_level"] = pred
 
-        # -----------------------------
-        # Highlight forecast rows biru
-        # -----------------------------
-        def highlight_forecast(row):
-            color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
-            return [color] * len(row)
+            # -----------------------------
+            # Display final table
+            # -----------------------------
+            st.subheader("Water Level + Climate Data")
+            for col in full_df.select_dtypes(include=np.number).columns:
+                full_df[col] = full_df[col].round(2)
 
-        styled_df = full_df.style.apply(highlight_forecast, axis=1)
+            def highlight_forecast(row):
+                color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
+                return [color] * len(row)
 
-        # -----------------------------
-        # Display table
-        # -----------------------------
-        st.subheader("Water Level + Climate Data + Forecast")
-        st.dataframe(styled_df, use_container_width=True, height=500)
+            styled_df = full_df.style.apply(highlight_forecast, axis=1)
+            st.dataframe(styled_df, use_container_width=True, height=400)
