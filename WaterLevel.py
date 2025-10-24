@@ -152,7 +152,7 @@ def build_lag_features(df, current_time, max_lags=24):
 # Fetch Data & Forecasting
 # -----------------------------
 if wl_hourly is not None:
-    if st.button("Fetch Climate Data & Perform Forecasting"):
+    if st.button("Forecast"):
         with st.spinner("Fetching Climate Data and Performing 7-day Forecasting..."):
             start_dt = wl_hourly["Datetime"].min()
             end_dt = wl_hourly["Datetime"].max()
