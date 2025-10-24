@@ -28,9 +28,18 @@ else:
 # -----------------------------
 st.subheader("Select Start Date & Time for 7-Day Forecast")
 
-selected_date = st.date_input("Date", value=rounded_now.date(), max_value=rounded_now.date())
+selected_date = st.date_input(
+    "Date",
+    value=rounded_now.date(),
+    max_value=rounded_now.date()
+)
+
 hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
-selected_hour_str = st.selectbox("Hour", hour_options, index=len(hour_options)-1)
+selected_hour_str = st.selectbox(
+    "Hour",
+    hour_options,
+    index=len(hour_options)-1
+)
 
 selected_hour = int(selected_hour_str.split(":")[0])
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
@@ -57,9 +66,8 @@ if uploaded_file is not None:
                 df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
                 .rename(columns={"Level Air": "Water_level"})
                 .sort_values(by="Datetime", ascending=True)
+                .round(2)
             )
-            # Round numeric columns only
-            wl_hourly = wl_hourly.round({col: 2 for col in wl_hourly.select_dtypes(include=[np.number]).columns})
 
             st.success("Successfully uploaded 24-hour water level data before start time.")
             st.dataframe(wl_hourly)
@@ -70,18 +78,23 @@ if uploaded_file is not None:
 # Fetch climate data
 # -----------------------------
 def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
-    st.info("Fetching climate data.")
+    start_date = start_dt.date().isoformat()
+    end_date = end_dt.date().isoformat()
+    st.info(f"Fetching historical climate data...")
+
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={lat}&longitude={lon}"
-        f"&start_date={start_dt.date()}&end_date={end_dt.date()}"
+        f"&start_date={start_date}&end_date={end_date}"
         f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain"
         f"&timezone=Asia%2FBangkok"
     )
+
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
         data = resp.json()
+
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
             "Surface_pressure": data["hourly"]["surface_pressure"],
@@ -90,9 +103,10 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"],
             "Rainfall": data["hourly"]["rain"]
         })
+
         df["Datetime"] = df["Datetime"].dt.floor("H")
-        df = df.round({col: 2 for col in df.select_dtypes(include=[np.number]).columns})
         return df
+
     except Exception as e:
         st.error(f"Failed to fetch historical climate data: {e}")
         return pd.DataFrame()
@@ -104,10 +118,12 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         f"&hourly=rain,surface_pressure,cloud_cover,soil_moisture_0_to_1cm,soil_temperature_0cm"
         f"&timezone=Asia%2FBangkok&forecast_days=14"
     )
+
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
         data = resp.json()
+
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
             "Surface_pressure": data["hourly"]["surface_pressure"],
@@ -116,9 +132,10 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"],
             "Rainfall": data["hourly"]["rain"]
         })
+
         df["Datetime"] = df["Datetime"].dt.floor("H")
-        df = df.round({col: 2 for col in df.select_dtypes(include=[np.number]).columns})
         return df
+
     except Exception as e:
         st.error(f"Failed to fetch forecast climate data: {e}")
         return pd.DataFrame()
@@ -128,19 +145,21 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
 # -----------------------------
 if wl_hourly is not None:
     if st.button("Fetch Climate Data"):
-        start_dt, end_dt = wl_hourly["Datetime"].min(), wl_hourly["Datetime"].max()
+        start_dt = wl_hourly["Datetime"].min()
+        end_dt = wl_hourly["Datetime"].max()
         climate_df = fetch_climate_historical(start_dt, end_dt)
 
-        merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left").sort_values(by="Datetime")
-        merged_df["Source"] = "Observed"
-
-        # Round numeric columns
-        merged_df = merged_df.round({col: 2 for col in merged_df.select_dtypes(include=[np.number]).columns})
+        merged_df = (
+            pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
+            .sort_values(by="Datetime", ascending=True)
+        )
 
         # Generate next 7x24 hours
-        forecast_df = pd.DataFrame({"Datetime": [start_datetime + timedelta(hours=i) for i in range(1, 169)]})
+        next_hours = [start_datetime + timedelta(hours=i) for i in range(1, 168 + 1)]
+        forecast_df = pd.DataFrame({"Datetime": next_hours})
         forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
 
+        # Determine source of climate data
         if forecast_end < gmt7_now:
             add_df = fetch_climate_historical(forecast_start, forecast_end)
         elif forecast_start > gmt7_now:
@@ -153,13 +172,27 @@ if wl_hourly is not None:
         forecast_merged = pd.merge(forecast_df, add_df, on="Datetime", how="left")
         forecast_merged["Water_level"] = np.nan
         forecast_merged["Source"] = "Forecast"
-        forecast_merged = forecast_merged.round({col: 2 for col in forecast_merged.select_dtypes(include=[np.number]).columns})
 
-        final_df = pd.concat([merged_df, forecast_merged], ignore_index=True).sort_values(by="Datetime")
+        merged_df["Source"] = "Observed"
 
-        # Highlight forecast rows
+        final_df = (
+            pd.concat([merged_df, forecast_merged], ignore_index=True)
+            .sort_values(by="Datetime", ascending=True)
+        )
+
+        # Round only numeric columns
+        final_df = final_df.apply(lambda x: np.round(x, 2) if np.issubdtype(x.dtype, np.number) else x)
+
+        # -----------------------------
+        # Highlight forecast rows (blue) but hide "Source" column
+        # -----------------------------
+        st.subheader("Water Level + Climate Data")
+
         def highlight_blue(row):
-            return ['background-color: lightblue' if row["Source"] == "Forecast" else '' for _ in row]
+            color = 'background-color: lightblue' if row["Source"] == "Forecast" else ''
+            return [color] * len(row)
 
-        st.subheader("Water Level + Climate Data (Observed & Forecast)")
-        st.dataframe(final_df.style.apply(highlight_blue, axis=1, subset=["Water_level", "Surface_pressure", "Cloud_cover", "Soil_temperature", "Soil_moisture", "Rainfall"]))
+        styled_df = final_df.style.apply(highlight_blue, axis=1)
+        display_cols = [col for col in final_df.columns if col != "Source"]
+
+        st.dataframe(styled_df[display_cols])
