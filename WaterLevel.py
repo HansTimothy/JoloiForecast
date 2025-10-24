@@ -58,12 +58,12 @@ wl_hourly = None
 if uploaded_file is not None:
     try:
         df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
+        df_wl = df_wl.sort_values(by="Datetime", ascending=False)
         if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
             st.error("File harus memiliki kolom 'Datetime' dan 'Level Air'")
         else:
             # Konversi ke datetime naive
             df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
-            df_wl = df_wl.sort_values(by="Datetime", ascending=False)
             
             # Filter 24 jam sebelum start_datetime
             start_limit = start_datetime - pd.Timedelta(hours=24)
