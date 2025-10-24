@@ -112,41 +112,18 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         return pd.DataFrame()
 
 # -----------------------------
-# Build lagged features
+# Helper function for lag values
 # -----------------------------
-def build_lag_features(df, current_time, max_lags=24):
-    lagged = {}
-    # Rainfall lag17-24
-    for lag in range(17, 25):
-        lag_time = current_time - timedelta(hours=lag)
-        val = df.loc[df["Datetime"] == lag_time, "Rainfall"]
-        lagged[f"Rainfall_Lag{lag}"] = val.values[0] if not val.empty else 0
-    # Cloud_cover lag1-24
-    for lag in range(1, 25):
-        lag_time = current_time - timedelta(hours=lag)
-        val = df.loc[df["Datetime"] == lag_time, "Cloud_cover"]
-        lagged[f"Cloud_cover_Lag{lag}"] = val.values[0] if not val.empty else 0
-    # Surface_pressure lag1-24
-    for lag in range(1, 25):
-        lag_time = current_time - timedelta(hours=lag)
-        val = df.loc[df["Datetime"] == lag_time, "Surface_pressure"]
-        lagged[f"Surface_pressure_Lag{lag}"] = val.values[0] if not val.empty else 0
-    # Soil_temperature lag9-11
-    for lag in range(9, 12):
-        lag_time = current_time - timedelta(hours=lag)
-        val = df.loc[df["Datetime"] == lag_time, "Soil_temperature"]
-        lagged[f"Soil_temperature_Lag{lag}"] = val.values[0] if not val.empty else 0
-    # Soil_moisture lag1-24
-    for lag in range(1, 25):
-        lag_time = current_time - timedelta(hours=lag)
-        val = df.loc[df["Datetime"] == lag_time, "Soil_moisture"]
-        lagged[f"Soil_moisture_Lag{lag}"] = val.values[0] if not val.empty else 0
-    # Water_level lag1-24
-    for lag in range(1, 25):
-        lag_time = current_time - timedelta(hours=lag)
-        val = df.loc[df["Datetime"] == lag_time, "Water_level"]
-        lagged[f"Water_level_Lag{lag}"] = val.values[0] if not val.empty else 0
-    return lagged
+def get_lag_value(df, col, target_time, max_lookback):
+    """
+    Ambil nilai lag literal, jika tidak ada, ambil nilai terakhir yang tersedia hingga max_lookback jam.
+    """
+    for lag in range(1, max_lookback+1):
+        lag_time = target_time - timedelta(hours=lag)
+        val = df.loc[df["Datetime"] == lag_time, col]
+        if len(val) > 0:
+            return val.values[0]
+    return 0
 
 # -----------------------------
 # Fetch Data & Forecasting
@@ -197,39 +174,27 @@ if wl_hourly is not None:
             for i in range(len(forecast_merged)):
                 row_time = forecast_merged.iloc[i]["Datetime"]
                 feature = {}
-    
-                # Generate lag features from full_df (observed + predicted so far)
+
+                # Generate lag features
                 for lag in lag_hours_rain:
-                    lag_time = row_time - timedelta(hours=lag)
-                    val = full_df.loc[full_df["Datetime"] == lag_time, "Rainfall"]
-                    feature[f"Rainfall_Lag{lag}"] = val.values[0] if len(val)>0 else 0
+                    feature[f"Rainfall_Lag{lag}"] = get_lag_value(full_df, "Rainfall", row_time, lag)
                 for lag in lag_hours_cloud:
-                    lag_time = row_time - timedelta(hours=lag)
-                    val = full_df.loc[full_df["Datetime"] == lag_time, "Cloud_cover"]
-                    feature[f"Cloud_cover_Lag{lag}"] = val.values[0] if len(val)>0 else 0
+                    feature[f"Cloud_cover_Lag{lag}"] = get_lag_value(full_df, "Cloud_cover", row_time, lag)
                 for lag in lag_hours_pressure:
-                    lag_time = row_time - timedelta(hours=lag)
-                    val = full_df.loc[full_df["Datetime"] == lag_time, "Surface_pressure"]
-                    feature[f"Surface_pressure_Lag{lag}"] = val.values[0] if len(val)>0 else 0
+                    feature[f"Surface_pressure_Lag{lag}"] = get_lag_value(full_df, "Surface_pressure", row_time, lag)
                 for lag in lag_hours_soiltemp:
-                    lag_time = row_time - timedelta(hours=lag)
-                    val = full_df.loc[full_df["Datetime"] == lag_time, "Soil_temperature"]
-                    feature[f"Soil_temperature_Lag{lag}"] = val.values[0] if len(val)>0 else 0
+                    feature[f"Soil_temperature_Lag{lag}"] = get_lag_value(full_df, "Soil_temperature", row_time, lag)
                 for lag in lag_hours_soilmoist:
-                    lag_time = row_time - timedelta(hours=lag)
-                    val = full_df.loc[full_df["Datetime"] == lag_time, "Soil_moisture"]
-                    feature[f"Soil_moisture_Lag{lag}"] = val.values[0] if len(val)>0 else 0
+                    feature[f"Soil_moisture_Lag{lag}"] = get_lag_value(full_df, "Soil_moisture", row_time, lag)
                 for lag in lag_hours_wl:
-                    lag_time = row_time - timedelta(hours=lag)
-                    val = full_df.loc[full_df["Datetime"] == lag_time, "Water_level"]
-                    feature[f"Water_level_Lag{lag}"] = val.values[0] if len(val)>0 else 0
-    
+                    feature[f"Water_level_Lag{lag}"] = get_lag_value(full_df, "Water_level", row_time, lag)
+
                 # Predict
                 feature_df = pd.DataFrame([feature])
                 pred = model.predict(feature_df)[0]
                 forecast_merged.at[i, "Water_level"] = max(pred, 0)  # min 0
-    
-            # Merge predictions into full_df
+
+            # Merge predictions ke full_df
             full_df.loc[full_df["Source"]=="Forecast","Water_level"] = forecast_merged["Water_level"].values
     
             # -----------------------------
@@ -244,4 +209,3 @@ if wl_hourly is not None:
     
             st.subheader("Water Level + Climate Data + Forecast")
             st.dataframe(styled_df, use_container_width=True, height=500)
-            
