@@ -18,7 +18,6 @@ st.title("🌊 Water Level Forecast Dashboard")
 # -----------------------------
 now_utc = datetime.utcnow()
 gmt7_now = now_utc + timedelta(hours=7)
-
 if gmt7_now.minute > 0 or gmt7_now.second > 0 or gmt7_now.microsecond > 0:
     rounded_now = (gmt7_now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
 else:
@@ -43,7 +42,6 @@ selected_hour_str = st.selectbox(
 )
 
 selected_hour = int(selected_hour_str.split(":")[0])
-
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
 
@@ -61,27 +59,27 @@ if uploaded_file is not None:
             st.error("The file must contain columns 'Datetime' and 'Level Air'.")
         else:
             df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
-
-            # Get 24 hours before start time
             start_limit = start_datetime - pd.Timedelta(hours=24)
             df_wl_filtered = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
 
-            wl_hourly = df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
-            wl_hourly.rename(columns={"Level Air": "Water_level"}, inplace=True)
-            wl_hourly = wl_hourly.sort_values(by="Datetime", ascending=False)
+            wl_hourly = (
+                df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
+                .rename(columns={"Level Air": "Water_level"})
+                .sort_values(by="Datetime", ascending=False)
+                .round(2)
+            )
 
             st.success("Successfully uploaded 24-hour water level data before start time.")
-            st.dataframe(wl_hourly.style.format({"Water_level": "{:.2f}"}))
+            st.dataframe(wl_hourly)
     except Exception as e:
         st.error(f"Failed to read file: {e}")
 
 # -----------------------------
-# Fetch historical climate data
+# Fetch climate data
 # -----------------------------
 def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
     start_date = start_dt.date().isoformat()
     end_date = end_dt.date().isoformat()
-    
     st.info(f"Fetching historical climate data from {start_date} to {end_date} and forecast climate data")
 
     url = (
@@ -105,16 +103,15 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"],
             "Rainfall": data["hourly"]["rain"]
         })
+
         df["Datetime"] = df["Datetime"].dt.floor("H")
+        df = df.sort_values(by="Datetime", ascending=False).round(2)
         return df
 
     except Exception as e:
         st.error(f"Failed to fetch historical climate data: {e}")
         return pd.DataFrame()
 
-# -----------------------------
-# Fetch forecast climate data
-# -----------------------------
 def fetch_climate_forecast(lat=-0.117, lon=114.1):
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
@@ -136,7 +133,9 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"],
             "Rainfall": data["hourly"]["rain"]
         })
+
         df["Datetime"] = df["Datetime"].dt.floor("H")
+        df = df.sort_values(by="Datetime", ascending=False).round(2)
         return df
 
     except Exception as e:
@@ -144,7 +143,7 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         return pd.DataFrame()
 
 # -----------------------------
-# Merge water level + climate + extend 7x24 hours
+# Merge data & extend 7x24 hours
 # -----------------------------
 if wl_hourly is not None:
     if st.button("Fetch Climate Data"):
@@ -152,17 +151,18 @@ if wl_hourly is not None:
         end_dt = wl_hourly["Datetime"].max()
         climate_df = fetch_climate_historical(start_dt, end_dt)
 
-        merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
-        merged_df = merged_df.sort_values(by="Datetime", ascending=False)
+        merged_df = (
+            pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
+            .sort_values(by="Datetime", ascending=False)
+            .round(2)
+        )
 
-        # Generate next 7x24 hours (168 hours)
+        # Generate next 7x24 hours
         next_hours = [start_datetime + timedelta(hours=i) for i in range(1, 168 + 1)]
         forecast_df = pd.DataFrame({"Datetime": next_hours})
+        forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
 
-        forecast_start = forecast_df["Datetime"].min()
-        forecast_end = forecast_df["Datetime"].max()
-
-        # Determine data type: historical / forecast / mixed
+        # Determine source of climate data
         if forecast_end < gmt7_now:
             add_df = fetch_climate_historical(forecast_start, forecast_end)
         elif forecast_start > gmt7_now:
@@ -172,20 +172,24 @@ if wl_hourly is not None:
             fore_df = fetch_climate_forecast()
             add_df = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
 
-        # Merge the new 7x24-hour data
         forecast_merged = pd.merge(forecast_df, add_df, on="Datetime", how="left")
         forecast_merged["Water_level"] = np.nan
         forecast_merged["Source"] = "Forecast"
 
         merged_df["Source"] = "Observed"
 
-        final_df = pd.concat([merged_df, forecast_merged], ignore_index=True)
-        final_df = final_df.sort_values(by="Datetime", ascending=False)
+        final_df = (
+            pd.concat([merged_df, forecast_merged], ignore_index=True)
+            .sort_values(by="Datetime", ascending=False)
+            .round(2)
+        )
 
-        # Highlight blue for forecasted rows
+        # Remove 'Source' column from display
+        display_df = final_df.drop(columns=["Source"], errors="ignore")
+
+        # Highlight forecast rows
         def highlight_blue(row):
-            color = "background-color: lightblue" if row["Source"] == "Forecast" else ""
-            return [color] * len(row)
+            return ['background-color: lightblue' if row.get("Source") == "Forecast" else '' for _ in row]
 
         st.subheader("Merged Water Level + Climate Data (Extended 7x24 Hours)")
-        st.dataframe(final_df.round(2).style.apply(highlight_blue, axis=1))
+        st.dataframe(display_df.style.apply(highlight_blue, axis=1))
