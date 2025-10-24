@@ -5,7 +5,6 @@ import joblib
 import numpy as np
 from datetime import datetime, timedelta, time
 from xgboost import XGBRegressor
-import time
 
 # -----------------------------
 # Load trained model
@@ -33,7 +32,6 @@ selected_date = st.date_input(
     value=rounded_now.date(),
     max_value=rounded_now.date()
 )
-selected_date = pd.to_datetime(selected_date).date()  # ensure datetime.date
 hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
 selected_hour_str = st.selectbox(
     "Hour",
@@ -41,6 +39,11 @@ selected_hour_str = st.selectbox(
     index=len(hour_options)-1
 )
 selected_hour = int(selected_hour_str.split(":")[0])
+
+# Fix: pastikan selected_date adalah datetime.date
+if isinstance(selected_date, pd.Timestamp):
+    selected_date = selected_date.date()
+
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
 
@@ -62,7 +65,7 @@ if uploaded_file is not None:
             start_limit = start_datetime - pd.Timedelta(hours=24)
             df_wl_filtered = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
 
-            # Check 24-hour completeness
+            # Cek kelengkapan 24 jam terakhir
             expected_hours = pd.date_range(start=start_limit, end=start_datetime - pd.Timedelta(hours=1), freq='H')
             actual_hours = pd.to_datetime(df_wl_filtered["Datetime"].sort_values().unique())
             missing_hours = sorted(set(expected_hours) - set(actual_hours))
@@ -76,10 +79,9 @@ if uploaded_file is not None:
                     .sort_values(by="Datetime", ascending=True)
                     .round(2)
                 )
-                st.success("Successfully uploaded 24-hour water level data before start time.")
-                upload_success = True
-                time.sleep(1)  # success message visible for 1 second
+                st.success("Successfully uploaded 24-hour water level data before start time.", icon="✅")
                 st.dataframe(wl_hourly)
+                upload_success = True
 
     except Exception as e:
         st.error(f"Failed to read file: {e}")
