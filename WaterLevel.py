@@ -158,7 +158,16 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
 # -----------------------------
 # Run 7-Day Forecast
 # -----------------------------
-if upload_success and st.button("Run 7-Day Forecast"):
+run_forecast = st.button("Run 7-Day Forecast")
+
+# Jika forecast sebelumnya sudah selesai, langsung tampilkan tanpa run ulang
+if "forecast_done" not in st.session_state:
+    st.session_state["forecast_done"] = False
+
+# Jalankan forecast jika tombol ditekan
+if upload_success and run_forecast:
+    st.session_state["forecast_done"] = False  # reset flag dulu
+
     progress_container = st.empty()
     progress_bar = st.progress(0)
     
@@ -224,7 +233,19 @@ if upload_success and st.button("Run 7-Day Forecast"):
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
-    # Display final dataframe
+    # Simpan hasil ke session_state
+    st.session_state["final_df"] = final_df
+    st.session_state["forecast_done"] = True
+
+
+# -----------------------------
+# Jika sudah pernah forecast, tampilkan hasilnya lagi tanpa run ulang
+# -----------------------------
+if st.session_state.get("forecast_done", False):
+
+    final_df = st.session_state["final_df"]
+
+    # Tabel hasil
     st.subheader("Water Level + Climate Data with Forecast")
     def highlight_forecast(row):
         color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
@@ -233,131 +254,73 @@ if upload_success and st.button("Run 7-Day Forecast"):
     styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
     st.dataframe(styled_df, use_container_width=True, height=500)
 
-    # ==============================
-    # Plot forecast with RMSE band
-    # ==============================
+    # Plot
     import plotly.graph_objects as go
-    
     st.subheader("Water Level Forecast Plot")
-    
-    # Misal kita pakai RMSE global historis sebagai contoh (ganti sesuai data nyata)
-    # Atau bisa hitung RMSE dari prediksi model vs historical saat validasi
-    rmse_est = 0.2  # contoh RMSE, bisa diganti sesuai model
-    
+    rmse_est = 0.2
     fig = go.Figure()
-    
-    # Historical line
     fig.add_trace(go.Scatter(
         x=final_df.loc[final_df["Source"]=="Historical", "Datetime"],
         y=final_df.loc[final_df["Source"]=="Historical", "Water_level"],
-        mode="lines+markers",
-        name="Historical",
-        line=dict(color="blue"),
-        marker=dict(size=4)
+        mode="lines+markers", name="Historical", line=dict(color="blue"), marker=dict(size=4)
     ))
-    
-    # Forecast line
     fig.add_trace(go.Scatter(
         x=final_df.loc[final_df["Source"]=="Forecast", "Datetime"],
         y=final_df.loc[final_df["Source"]=="Forecast", "Water_level"],
-        mode="lines+markers",
-        name="Forecast",
-        line=dict(color="orange"),
-        marker=dict(size=4)
+        mode="lines+markers", name="Forecast", line=dict(color="orange"), marker=dict(size=4)
     ))
-    
-    # RMSE/shaded area for forecast
     forecast_y = final_df.loc[final_df["Source"]=="Forecast", "Water_level"]
     forecast_x = final_df.loc[final_df["Source"]=="Forecast", "Datetime"]
     fig.add_trace(go.Scatter(
         x=pd.concat([forecast_x, forecast_x[::-1]]),
         y=pd.concat([forecast_y + rmse_est, (forecast_y - rmse_est).clip(0)[::-1]]),
-        fill='toself',
-        fillcolor='rgba(255,165,0,0.2)',
-        line=dict(color='rgba(255,255,255,0)'),
-        hoverinfo="skip",
-        showlegend=True,
-        name="Forecast ± RMSE"
+        fill='toself', fillcolor='rgba(255,165,0,0.2)',
+        line=dict(color='rgba(255,255,255,0)'), hoverinfo="skip",
+        showlegend=True, name="Forecast ± RMSE"
     ))
-    
-    # Layout
     fig.update_layout(
-        xaxis_title="Datetime",
-        yaxis_title="Water Level",
+        xaxis_title="Datetime", yaxis_title="Water Level",
         title="Water Level Historical vs 7-Day Forecast",
-        template="plotly_white",
-        hovermode="x unified"
+        template="plotly_white", hovermode="x unified"
     )
-    
     st.plotly_chart(fig, use_container_width=True)
 
     # -----------------------------
-    # Simpan hasil forecast di session_state
+    # Tombol download (tidak reset data)
     # -----------------------------
-    st.session_state["final_df"] = final_df
-    
-    # -----------------------------
-    # DOWNLOAD OPTIONS (tanpa reset session)
-    # -----------------------------
-    if "final_df" in st.session_state:
-        export_df = st.session_state["final_df"][["Datetime", "Water_level"]].copy()
-        export_df["Water_level"] = export_df["Water_level"].round(2)
-        export_df["Datetime"] = export_df["Datetime"].astype(str)
-    
-        # ===== CSV =====
-        csv_buffer = export_df.to_csv(index=False).encode('utf-8')
-    
-        # ===== Excel =====
-        excel_buffer = BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            export_df.to_excel(writer, index=False, sheet_name="Forecast")
-        excel_buffer.seek(0)
-    
-        # ===== PDF =====
-        pdf_buffer = BytesIO()
-        doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
-        styles = getSampleStyleSheet()
-        data = [export_df.columns.tolist()] + export_df.values.tolist()
-    
-        table = Table(data)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#007acc")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
-        ]))
-        elements = [Paragraph("Joloi Water Level Forecast", styles["Title"]), table]
-        doc.build(elements)
-    
-        # -----------------------------
-        # Tombol rata tengah
-        # -----------------------------
-        st.markdown("### 📥 Download Forecast Results")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.download_button(
-                label="Download CSV",
-                data=csv_buffer,
-                file_name="water_level_forecast.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        with col2:
-            st.download_button(
-                label="Download Excel",
-                data=excel_buffer,
-                file_name="water_level_forecast.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        with col3:
-            st.download_button(
-                label="Download PDF",
-                data=pdf_buffer.getvalue(),
-                file_name="water_level_forecast.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
+    export_df = final_df[["Datetime", "Water_level"]].copy()
+    export_df["Water_level"] = export_df["Water_level"].round(2)
+    export_df["Datetime"] = export_df["Datetime"].astype(str)
+
+    csv_buffer = export_df.to_csv(index=False).encode('utf-8')
+
+    excel_buffer = BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+        export_df.to_excel(writer, index=False, sheet_name="Forecast")
+    excel_buffer.seek(0)
+
+    pdf_buffer = BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
+    styles = getSampleStyleSheet()
+    data = [export_df.columns.tolist()] + export_df.values.tolist()
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#007acc")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+    ]))
+    elements = [Paragraph("Joloi Water Level Forecast", styles["Title"]), table]
+    doc.build(elements)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.download_button("📄 CSV", csv_buffer, "water_level_forecast.csv", "text/csv", use_container_width=True)
+    with col2:
+        st.download_button("📘 Excel", excel_buffer, "water_level_forecast.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    with col3:
+        st.download_button("📑 PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
