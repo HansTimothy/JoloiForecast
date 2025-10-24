@@ -63,19 +63,18 @@ if uploaded_file is not None:
                 placeholder_msg.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
                 time.sleep(10)
                 placeholder_msg.empty()
+                wl_hourly = None  # pastikan tidak ada data yang diproses
+            else:
+                wl_hourly = (
+                    df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
+                    .rename(columns={"Level Air": "Water_level"})
+                    .sort_values(by="Datetime", ascending=True)
+                    .round(2)
+                )
+                placeholder_msg.success("Successfully uploaded 24-hour water level data before start time.")
+                time.sleep(10)
+                placeholder_msg.empty()
 
-            wl_hourly = (
-                df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
-                .rename(columns={"Level Air": "Water_level"})
-                .sort_values(by="Datetime", ascending=True)
-                .round(2)
-            )
-
-            placeholder_msg.success("Successfully uploaded 24-hour water level data before start time.")
-            time.sleep(10)
-            placeholder_msg.empty()
-
-            st.dataframe(wl_hourly)
     except Exception as e:
         placeholder_msg = st.empty()
         placeholder_msg.error(f"Failed to read file: {e}")
@@ -142,10 +141,9 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
 # Run 7-Day Forecast
 # -----------------------------
 if wl_hourly is not None and st.button("Run 7-Day Forecast"):
+    # Lanjutkan proses forecast hanya jika wl_hourly valid (tidak ada missing hour)
     progress_container = st.empty()
     progress_bar = st.progress(0)
-
-    # total_steps: 3 fetching/merge + 168 forecast
     total_steps = 3 + 168
     step_counter = 0
 
