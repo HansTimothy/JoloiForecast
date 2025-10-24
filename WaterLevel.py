@@ -292,46 +292,59 @@ if upload_success and st.button("Run 7-Day Forecast"):
     st.plotly_chart(fig, use_container_width=True)
 
     # -----------------------------
-    # Download buttons
+    # DOWNLOAD OPTIONS
     # -----------------------------
-    st.subheader("Export Data / Download")
-
-    # CSV
-    csv_buffer = io.StringIO()
-    final_df.to_csv(csv_buffer, index=False)
-    csv_bytes = csv_buffer.getvalue().encode('utf-8')
-    st.download_button(
-        label="Download CSV",
-        data=csv_bytes,
-        file_name="waterlevel_forecast.csv",
-        mime="text/csv"
-    )
-
+    st.subheader("📥 Download Forecast Results")
+    
+    # Convert final_df to downloadable formats
+    csv = final_df.to_csv(index=False).encode('utf-8')
+    
     # Excel
     excel_buffer = io.BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-        final_df.to_excel(writer, index=False, sheet_name="Forecast")
-        writer.save()
-    st.download_button(
-        label="Download Excel",
-        data=excel_buffer.getvalue(),
-        file_name="waterlevel_forecast.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    # Print / PDF
-    st.markdown(
-        """
-        <button onclick="window.print()" style="
-            background-color:#4CAF50;
-            color:white;
-            padding:8px 16px;
-            border:none;
-            border-radius:4px;
-            cursor:pointer;
-            font-size:16px;">
-            Print (PDF)
-        </button>
-        """,
-        unsafe_allow_html=True
-    )
+    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+        final_df.to_excel(writer, index=False, sheet_name='Forecast')
+    excel_buffer.seek(0)
+    
+    # PDF (simple table using reportlab)
+    pdf_buffer = io.BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
+    elements = []
+    elements.append(Paragraph("Water Level Forecast Results", getSampleStyleSheet()["Title"]))
+    table_data = [final_df.columns.tolist()] + final_df.values.tolist()
+    table = Table(table_data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+    ]))
+    elements.append(table)
+    doc.build(elements)
+    pdf_buffer.seek(0)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.download_button(
+            label="⬇️ Download CSV",
+            data=csv,
+            file_name="forecast_results.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        st.download_button(
+            label="⬇️ Download Excel",
+            data=excel_buffer,
+            file_name="forecast_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+    with col3:
+        st.download_button(
+            label="🖨️ Print (PDF)",
+            data=pdf_buffer,
+            file_name="forecast_results.pdf",
+            mime="application/pdf"
+        )
