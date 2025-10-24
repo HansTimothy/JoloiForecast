@@ -240,10 +240,19 @@ if wl_hourly is not None:
             # Round numeric columns
             for col in full_df.select_dtypes(include=np.number).columns:
                 full_df[col] = full_df[col].round(2)
-
-            display_df = full_df.copy()
-            styled_df = display_df.style.apply(highlight_forecast, axis=1)
-
+            
+            # Highlight forecast
+            def highlight_forecast(row):
+                color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
+                return [color] * len(row)
+            
+            # Buat styler dengan rounding 2 angka di belakang koma
+            styled_df = (
+                full_df.style
+                .apply(highlight_forecast, axis=1)
+                .format("{:.2f}")  # <-- paksa semua numeric tampil 2 desimal
+            )
+            
             st.dataframe(
                 styled_df,
                 use_container_width=True,
