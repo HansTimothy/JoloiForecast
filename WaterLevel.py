@@ -3,8 +3,8 @@ import pandas as pd
 import requests
 import joblib
 import numpy as np
-from datetime import datetime, timedelta, time
-
+import time
+from datetime import datetime, timedelta, time as dtime
 from xgboost import XGBRegressor
 
 # -----------------------------
@@ -19,28 +19,18 @@ st.title("🌊 Water Level Forecast Dashboard")
 # -----------------------------
 now_utc = datetime.utcnow()
 gmt7_now = now_utc + timedelta(hours=7)
-if gmt7_now.minute > 0 or gmt7_now.second > 0 or gmt7_now.microsecond > 0:
-    rounded_now = (gmt7_now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-else:
-    rounded_now = gmt7_now.replace(minute=0, second=0, microsecond=0)
+rounded_now = (gmt7_now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0) \
+    if (gmt7_now.minute > 0 or gmt7_now.second > 0 or gmt7_now.microsecond > 0) else gmt7_now.replace(minute=0, second=0, microsecond=0)
 
 # -----------------------------
 # Select forecast start datetime
 # -----------------------------
 st.subheader("Select Start Date & Time for 7-Day Forecast")
-selected_date = st.date_input(
-    "Date",
-    value=rounded_now.date(),
-    max_value=rounded_now.date()
-)
+selected_date = st.date_input("Date", value=rounded_now.date(), max_value=rounded_now.date())
 hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
-selected_hour_str = st.selectbox(
-    "Hour",
-    hour_options,
-    index=len(hour_options)-1
-)
+selected_hour_str = st.selectbox("Hour", hour_options, index=len(hour_options)-1)
 selected_hour = int(selected_hour_str.split(":")[0])
-start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
+start_datetime = datetime.combine(selected_date, dtime(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
 
 # -----------------------------
@@ -53,8 +43,12 @@ wl_hourly = None
 if uploaded_file is not None:
     try:
         df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
+        placeholder_msg = st.empty()  # placeholder untuk message
+
         if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
-            st.error("The file must contain columns 'Datetime' and 'Level Air'.")
+            placeholder_msg.error("The file must contain columns 'Datetime' and 'Level Air'.")
+            time.sleep(10)
+            placeholder_msg.empty()
         else:
             df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
             start_limit = start_datetime - pd.Timedelta(hours=24)
@@ -66,7 +60,9 @@ if uploaded_file is not None:
             missing_hours = sorted(set(expected_hours) - set(actual_hours))
             if missing_hours:
                 missing_str = ', '.join([dt.strftime("%Y-%m-%d %H:%M") for dt in missing_hours])
-                st.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
+                placeholder_msg.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
+                time.sleep(10)
+                placeholder_msg.empty()
 
             wl_hourly = (
                 df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
@@ -75,10 +71,17 @@ if uploaded_file is not None:
                 .round(2)
             )
 
-            st.success("Successfully uploaded 24-hour water level data before start time.")
+            placeholder_msg.success("Successfully uploaded 24-hour water level data before start time.")
+            time.sleep(10)
+            placeholder_msg.empty()
+
             st.dataframe(wl_hourly)
     except Exception as e:
-        st.error(f"Failed to read file: {e}")
+        placeholder_msg = st.empty()
+        placeholder_msg.error(f"Failed to read file: {e}")
+        time.sleep(10)
+        placeholder_msg.empty()
+
 # -----------------------------
 # Fetch climate functions
 # -----------------------------
@@ -141,7 +144,7 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
 if wl_hourly is not None and st.button("Run 7-Day Forecast"):
     progress_container = st.empty()
     progress_bar = st.progress(0)
-    
+
     # total_steps: 3 fetching/merge + 168 forecast
     total_steps = 3 + 168
     step_counter = 0
@@ -182,7 +185,7 @@ if wl_hourly is not None and st.button("Run 7-Day Forecast"):
     progress_container.markdown("Forecasting water level for 7 days...")
     model_features = model.get_booster().feature_names
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
-    
+
     for i, idx in enumerate(forecast_indices, start=1):
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
