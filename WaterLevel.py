@@ -188,25 +188,15 @@ if wl_hourly is not None:
         # -----------------------------
         st.subheader("Water Level + Climate Data")
         
-        # Columns to display (hide 'Source')
-        display_cols = [col for col in final_df.columns if col != "Source"]
-        
-        # Function to highlight forecast rows
-        def highlight_blue(row):
-            color = "background-color: lightblue" if row["Source"] == "Forecast" else ""
-            return [color] * len(row)
-        
-        # Apply rounding to 2 decimals on numeric columns
+        # Round numeric columns to 2 decimals
         for col in final_df.select_dtypes(include=np.number).columns:
             final_df[col] = final_df[col].round(2)
         
-        # Apply highlight and formatting
-        styled_df = (
-            final_df.style
-            .apply(highlight_blue, axis=1)
-            .format(precision=2)  # display numbers with 2 decimals
-            .hide(axis="columns", subset=["Source"])  # hide the 'Source' column
-        )
+        # Add row color tag for forecast
+        final_df["Row_color"] = np.where(final_df["Source"] == "Forecast", "background-color: lightblue", "")
         
-        # Render styled dataframe with HTML (to keep color)
-        st.markdown(styled_df.to_html(escape=False), unsafe_allow_html=True)
+        # Hide 'Source' but keep highlight
+        display_df = final_df.drop(columns=["Source"])
+        
+        # Use Streamlit dataframe (scrollable & responsive)
+        st.dataframe(display_df.style.apply(lambda x: [x["Row_color"]] * len(x), axis=1).hide(axis="columns", subset=["Row_color"]))
