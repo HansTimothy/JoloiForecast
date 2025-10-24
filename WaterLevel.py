@@ -6,6 +6,7 @@ import numpy as np
 from datetime import datetime, timedelta, time
 from xgboost import XGBRegressor
 import time as t
+import io
 
 # -----------------------------
 # Load trained model
