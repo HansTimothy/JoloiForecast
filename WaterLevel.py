@@ -89,6 +89,7 @@ if uploaded_file is not None:
                     .sort_values(by="Datetime", ascending=True)
                     .round(2)
                 )
+                # Display success once
                 success_msg = st.success("Successfully uploaded 24-hour water level data before start time.")
                 t.sleep(1)
                 success_msg.empty()
