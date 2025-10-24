@@ -47,7 +47,7 @@ if uploaded_file is not None:
         df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
         if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
             placeholder_msg.error("The file must contain columns 'Datetime' and 'Level Air'.")
-            time.sleep(10)
+            time.sleep(3)
             placeholder_msg.empty()
         else:
             df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
@@ -61,7 +61,7 @@ if uploaded_file is not None:
             if missing_hours:
                 missing_str = ', '.join([dt.strftime("%Y-%m-%d %H:%M") for dt in missing_hours])
                 placeholder_msg.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
-                time.sleep(10)
+                time.sleep(3)
                 placeholder_msg.empty()
             else:
                 wl_hourly = (
@@ -71,14 +71,14 @@ if uploaded_file is not None:
                     .round(2)
                 )
                 placeholder_msg.success("Successfully uploaded 24-hour water level data before start time.")
-                time.sleep(10)
+                time.sleep(3)
                 placeholder_msg.empty()
                 st.dataframe(wl_hourly, use_container_width=True, height=400)
                 ready_for_forecast = True  # tombol forecast bisa muncul
 
     except Exception as e:
         placeholder_msg.error(f"Failed to read file: {e}")
-        time.sleep(10)
+        time.sleep(3)
         placeholder_msg.empty()
 
 # -----------------------------
