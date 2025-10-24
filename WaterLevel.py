@@ -100,7 +100,7 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
         df["Datetime"] = df["Datetime"].dt.floor("H")
         return df
     except Exception as e:
-        st.error(f"Failed to fetch historical climate data: {e}")
+        st.error(f"Failed to fetch climate data: {e}")
         return pd.DataFrame()
 
 def fetch_climate_forecast(lat=-0.117, lon=114.1):
@@ -125,7 +125,7 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         df["Datetime"] = df["Datetime"].dt.floor("H")
         return df
     except Exception as e:
-        st.error(f"Failed to fetch forecast climate data: {e}")
+        st.error(f"Failed to fetch climate data: {e}")
         return pd.DataFrame()
 
 # -----------------------------
@@ -135,39 +135,35 @@ if wl_hourly is not None and st.button("Run 7-Day Forecast"):
     progress_container = st.empty()
     progress_bar = st.progress(0)
     
-    # total_steps: 3 fetching/merge + 168 prediction
+    # total_steps: 3 fetching/merge + 168 forecast
     total_steps = 3 + 168
     step_counter = 0
 
-    # 1️⃣ Fetch historical climate
-    progress_container.markdown("Fetching historical climate data...")
+    # 1️⃣ Fetch climate data
+    progress_container.markdown("Fetching climate data...")
     start_dt = wl_hourly["Datetime"].min()
     end_dt = wl_hourly["Datetime"].max()
-    climate_df = fetch_climate_historical(start_dt, end_dt)
-    step_counter += 1
-    progress_bar.progress(step_counter / total_steps)
+    climate_hist = fetch_climate_historical(start_dt, end_dt)
 
-    # 2️⃣ Fetch forecast climate
-    progress_container.markdown("Fetching forecast climate data...")
     forecast_hours = [start_datetime + timedelta(hours=i) for i in range(0, 168)]
     forecast_df = pd.DataFrame({"Datetime": forecast_hours})
     forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
     if forecast_end < gmt7_now:
-        add_df = fetch_climate_historical(forecast_start, forecast_end)
+        climate_forecast = fetch_climate_historical(forecast_start, forecast_end)
     elif forecast_start > gmt7_now:
-        add_df = fetch_climate_forecast()
+        climate_forecast = fetch_climate_forecast()
     else:
         hist_df = fetch_climate_historical(forecast_start, gmt7_now)
         fore_df = fetch_climate_forecast()
-        add_df = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
+        climate_forecast = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
-    # 3️⃣ Merge data
+    # 2️⃣ Merge data
     progress_container.markdown("Merging water level and climate data...")
-    merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left").sort_values("Datetime")
+    merged_df = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
     merged_df["Source"] = "Historical"
-    forecast_merged = pd.merge(forecast_df, add_df, on="Datetime", how="left")
+    forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
     forecast_merged["Water_level"] = np.nan
     forecast_merged["Source"] = "Forecast"
     final_df = pd.concat([merged_df, forecast_merged], ignore_index=True).sort_values("Datetime")
@@ -175,33 +171,31 @@ if wl_hourly is not None and st.button("Run 7-Day Forecast"):
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
-    # 4️⃣ Iterative prediction
-    progress_container.markdown("Predicting water level for 7 days...")
+    # 3️⃣ Iterative forecast
+    progress_container.markdown("Forecasting water level for 7 days...")
     model_features = model.get_booster().feature_names
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
     
     for i, idx in enumerate(forecast_indices, start=1):
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
-        progress_container.markdown(f"Predicting hour {i}/{len(forecast_indices)}...")
+        progress_container.markdown(f"Forecasting hour {i}/{len(forecast_indices)}...")
 
-        # Prepare input
-        X_pred = pd.DataFrame(columns=model_features, index=[0])
+        X_forecast = pd.DataFrame(columns=model_features, index=[0])
         for f in model_features:
             base, lag = f.rsplit("_Lag",1)
             lag = int(lag)
             try:
-                X_pred.at[0,f] = final_df.loc[idx-lag, base]
+                X_forecast.at[0,f] = final_df.loc[idx-lag, base]
             except:
-                # fallback to last historical values
-                X_pred.at[0,f] = final_df.loc[final_df["Source"]=="Historical", base].iloc[-lag]
-        X_pred = X_pred.astype(float)
+                X_forecast.at[0,f] = final_df.loc[final_df["Source"]=="Historical", base].iloc[-lag]
+        X_forecast = X_forecast.astype(float)
 
-        y_hat = model.predict(X_pred)[0]
+        y_hat = model.predict(X_forecast)[0]
         if y_hat < 0: y_hat = 0.0
         final_df.at[idx, "Water_level"] = round(y_hat,2)
 
-    progress_container.markdown("✅ 7-Day Forecast Completed!")
+    progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
     # Display final dataframe
