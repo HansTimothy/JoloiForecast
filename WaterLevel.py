@@ -94,10 +94,6 @@ if uploaded_file is not None:
                     .sort_values(by="Datetime", ascending=True)
                     .round(2)
                 )
-                # Display success once
-                success_msg = st.success("Successfully uploaded 24-hour water level data before start time.")
-                t.sleep(1)
-                success_msg.empty()
                 st.dataframe(wl_hourly)
 
     except Exception as e:
@@ -296,65 +292,72 @@ if upload_success and st.button("Run 7-Day Forecast"):
     st.plotly_chart(fig, use_container_width=True)
 
     # -----------------------------
-    # DOWNLOAD OPTIONS
+    # Simpan hasil forecast di session_state
     # -----------------------------
-    # Ambil hanya dua kolom
-    export_df = final_df[["Datetime", "Water_level"]].copy()
-    export_df["Datetime"] = export_df["Datetime"].astype(str)
-    
-    # ===== CSV =====
-    csv_buffer = export_df.to_csv(index=False).encode('utf-8')
-    
-    # ===== Excel =====
-    excel_buffer = BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-        export_df.to_excel(writer, index=False, sheet_name="Forecast")
-    excel_buffer.seek(0)
-    
-    # ===== PDF =====
-    pdf_buffer = BytesIO()
-    doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
-    styles = getSampleStyleSheet()
-    data = [export_df.columns.tolist()] + export_df.values.tolist()
-    
-    table = Table(data)
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#007acc")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
-    ]))
-    elements = [Paragraph("Water Level Forecast Results", styles["Title"]), table]
-    doc.build(elements)
+    st.session_state["final_df"] = final_df
     
     # -----------------------------
-    # Tombol rata tengah
+    # DOWNLOAD OPTIONS (tanpa reset session)
     # -----------------------------
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.download_button(
-            label="📄 CSV",
-            data=csv_buffer,
-            file_name="water_level_forecast.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-    with col2:
-        st.download_button(
-            label="📘 Excel",
-            data=excel_buffer,
-            file_name="water_level_forecast.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-    with col3:
-        st.download_button(
-            label="📑 PDF",
-            data=pdf_buffer.getvalue(),
-            file_name="water_level_forecast.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
+    if "final_df" in st.session_state:
+        export_df = st.session_state["final_df"][["Datetime", "Water_level"]].copy()
+        export_df["Water_level"] = export_df["Water_level"].round(2)
+        export_df["Datetime"] = export_df["Datetime"].astype(str)
+    
+        # ===== CSV =====
+        csv_buffer = export_df.to_csv(index=False).encode('utf-8')
+    
+        # ===== Excel =====
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            export_df.to_excel(writer, index=False, sheet_name="Forecast")
+        excel_buffer.seek(0)
+    
+        # ===== PDF =====
+        pdf_buffer = BytesIO()
+        doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
+        styles = getSampleStyleSheet()
+        data = [export_df.columns.tolist()] + export_df.values.tolist()
+    
+        table = Table(data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#007acc")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+        ]))
+        elements = [Paragraph("Joloi Water Level Forecast", styles["Title"]), table]
+        doc.build(elements)
+    
+        # -----------------------------
+        # Tombol rata tengah
+        # -----------------------------
+        st.markdown("### 📥 Download Forecast Results")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.download_button(
+                label="Download CSV",
+                data=csv_buffer,
+                file_name="water_level_forecast.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with col2:
+            st.download_button(
+                label="Download Excel",
+                data=excel_buffer,
+                file_name="water_level_forecast.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        with col3:
+            st.download_button(
+                label="Download PDF",
+                data=pdf_buffer.getvalue(),
+                file_name="water_level_forecast.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
