@@ -280,7 +280,7 @@ if st.session_state.get("forecast_done", False):
             y=forecast_df_plot["Water_level"],
             mode="lines+markers",
             name="Forecast",
-            line=dict(color="orange", width=2, dash="dot"),
+            line=dict(color="orange", width=2"),
             marker=dict(size=4),
             hovertemplate="Datetime: %{x}<br>Predicted Water Level: %{y:.2f} m"
         ))
