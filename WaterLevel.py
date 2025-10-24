@@ -5,7 +5,6 @@ import joblib
 import numpy as np
 from datetime import datetime, timedelta, time
 from xgboost import XGBRegressor
-import time as t
 from io import BytesIO
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
@@ -92,6 +91,25 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Failed to read file: {e}")
+
+# -----------------------------
+# Reset forecast if inputs change
+# -----------------------------
+if "last_inputs" not in st.session_state:
+    st.session_state["last_inputs"] = {"date": None, "hour": None, "file_uploaded": None}
+
+inputs_changed = (
+    st.session_state["last_inputs"]["date"] != selected_date or
+    st.session_state["last_inputs"]["hour"] != selected_hour or
+    st.session_state["last_inputs"]["file_uploaded"] != uploaded_file
+)
+
+if inputs_changed:
+    st.session_state["forecast_done"] = False
+    st.session_state["final_df"] = None
+    st.session_state["last_inputs"]["date"] = selected_date
+    st.session_state["last_inputs"]["hour"] = selected_hour
+    st.session_state["last_inputs"]["file_uploaded"] = uploaded_file
 
 # -----------------------------
 # Fetch climate functions
@@ -234,7 +252,6 @@ if st.session_state.get("forecast_done", False):
     rmse_est = 0.06
     fig = go.Figure()
     
-    # 1️⃣ Historical line
     hist_df = final_df[final_df["Source"]=="Historical"]
     fig.add_trace(go.Scatter(
         x=hist_df["Datetime"],
@@ -246,14 +263,11 @@ if st.session_state.get("forecast_done", False):
         hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
     ))
     
-    # 2️⃣ Forecast line (tersambung dengan titik Historical terakhir)
     forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
     if not forecast_df_plot.empty:
-        # Ambil titik terakhir Historical
         last_hist_time = hist_df["Datetime"].iloc[-1]
         last_hist_value = hist_df["Water_level"].iloc[-1]
     
-        # Gabungkan dengan Forecast
         forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
         forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level"]])
     
@@ -267,7 +281,6 @@ if st.session_state.get("forecast_done", False):
             hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
         ))
     
-        # 3️⃣ RMSE area
         rmse_y_upper = (forecast_plot_y + rmse_est)
         rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
         fig.add_trace(go.Scatter(
