@@ -85,7 +85,7 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
     start_date = start_dt.date().isoformat()
     end_date = end_dt.date().isoformat()
     
-    st.info(f"Fetching climate data from {start_date} to {end_date}")
+    st.info(f"Fetching climate data (historical) from {start_date} to {end_date}")
 
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
@@ -100,7 +100,6 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
         resp.raise_for_status()
         data = resp.json()
         
-        # Buat dataframe
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
             "Surface_pressure": data["hourly"]["surface_pressure"],
@@ -109,34 +108,88 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"],
             "Rainfall": data["hourly"]["rain"]
         })
-        
         df["Datetime"] = df["Datetime"].dt.floor("H")
         return df
-    
     except Exception as e:
-        st.error(f"Gagal fetch climate data: {e}")
-        return pd.DataFrame()  # kembalikan empty df jika gagal
-    
+        st.error(f"Gagal fetch climate data historis: {e}")
+        return pd.DataFrame()
+
 # -----------------------------
-# Contoh merge dengan water level
+# Fungsi fetch climate forecast
+# -----------------------------
+def fetch_climate_forecast(lat=-0.117, lon=114.1):
+    st.info("Fetching climate data (forecast) 14 hari ke depan...")
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lon}"
+        f"&hourly=rain,surface_pressure,cloud_cover,soil_moisture_0_to_1cm,soil_temperature_0cm"
+        f"&timezone=Asia%2FBangkok&forecast_days=14"
+    )
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        df = pd.DataFrame({
+            "Datetime": pd.to_datetime(data["hourly"]["time"]),
+            "Surface_pressure": data["hourly"]["surface_pressure"],
+            "Cloud_cover": data["hourly"]["cloud_cover"],
+            "Soil_temperature": data["hourly"]["soil_temperature_0cm"],
+            "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"],
+            "Rainfall": data["hourly"]["rain"]
+        })
+        df["Datetime"] = df["Datetime"].dt.floor("H")
+        return df
+    except Exception as e:
+        st.error(f"Gagal fetch climate forecast: {e}")
+        return pd.DataFrame()
+
+# -----------------------------
+# Merge dengan water level + tambah 7x24 jam forecast
 # -----------------------------
 if wl_hourly is not None:
-    if st.button("Fetch Climate Data"):
+    if st.button("Fetch Climate Data & Extend 7x24 Jam"):
         start_dt = wl_hourly["Datetime"].min()
         end_dt = wl_hourly["Datetime"].max()
-        
         climate_df = fetch_climate_historical(start_dt, end_dt)
-        
-        # Merge on Datetime
+
+        # Merge historis 24 jam terakhir
         merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
         merged_df = merged_df.sort_values(by="Datetime", ascending=False)
-        
-        # Pastikan numerik
-        numeric_cols = ["Water_level","Pressure","Cloud_cover","Soil_temp","Soil_moisture","Rain"]
-        for col in numeric_cols:
-            if col in merged_df.columns:
-                merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce')
-        merged_df.fillna(0, inplace=True)
-        
-        st.subheader("Merged Water Level + Climate Data")
-        st.dataframe(merged_df.round(2))
+
+        # 7x24 jam ke depan
+        next_hours = [start_datetime + timedelta(hours=i) for i in range(1, 168 + 1)]
+        forecast_df = pd.DataFrame({"Datetime": next_hours})
+
+        forecast_start = forecast_df["Datetime"].min()
+        forecast_end = forecast_df["Datetime"].max()
+
+        # Tentukan apakah historis / forecast / campuran
+        if forecast_end < gmt7_now:
+            # Semua historis
+            add_df = fetch_climate_historical(forecast_start, forecast_end)
+        elif forecast_start > gmt7_now:
+            # Semua forecast
+            add_df = fetch_climate_forecast()
+        else:
+            # Campuran
+            hist_df = fetch_climate_historical(forecast_start, gmt7_now)
+            fore_df = fetch_climate_forecast()
+            add_df = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
+
+        # Gabungkan dengan forecast_df (pastikan hanya 168 jam)
+        forecast_merged = pd.merge(forecast_df, add_df, on="Datetime", how="left")
+        forecast_merged["Water_level"] = np.nan  # placeholder
+        forecast_merged["Source"] = "Forecast 7x24"
+
+        merged_df["Source"] = "Observed"
+
+        final_df = pd.concat([merged_df, forecast_merged], ignore_index=True)
+        final_df = final_df.sort_values(by="Datetime", ascending=False)
+
+        # Highlight biru untuk 7x24 jam
+        def highlight_blue(row):
+            color = "background-color: lightblue" if row["Source"] == "Forecast 7x24" else ""
+            return [color] * len(row)
+
+        st.subheader("Merged Water Level + Climate Data (Extended 7x24 Jam)")
+        st.dataframe(final_df.round(2).style.apply(highlight_blue, axis=1))
