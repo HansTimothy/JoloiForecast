@@ -141,110 +141,89 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         return pd.DataFrame()
 
 # -----------------------------
-# Merge data & extend 7x24 hours
+# Merge data & forecasting
 # -----------------------------
 if wl_hourly is not None:
     if st.button("Fetch Climate Data & Forecasting"):
+        # Historical climate
         start_dt = wl_hourly["Datetime"].min()
         end_dt = wl_hourly["Datetime"].max()
-    
-        # 1️⃣ Fetch historical climate for uploaded data
-        climate_df = fetch_climate_historical(start_dt, end_dt)
-        merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left").sort_values(by="Datetime")
-    
-        # 2️⃣ Generate next 7x24 hours timestamps
-        next_hours = [start_datetime + timedelta(hours=i) for i in range(1, 168 + 1)]
+        climate_hist = fetch_climate_historical(start_dt, end_dt)
+        merged_df = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left")
+        merged_df["Source"] = "Historical"
+
+        # Forecast climate
+        next_hours = [start_datetime + timedelta(hours=i) for i in range(1, 168+1)]
         forecast_df = pd.DataFrame({"Datetime": next_hours})
         forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
-    
-        # 3️⃣ Fetch climate data for forecast range
+
         if forecast_end < gmt7_now:
-            add_df = fetch_climate_historical(forecast_start, forecast_end)
+            climate_fore = fetch_climate_historical(forecast_start, forecast_end)
         elif forecast_start > gmt7_now:
-            add_df = fetch_climate_forecast()
+            climate_fore = fetch_climate_forecast()
         else:
-            hist_df = fetch_climate_historical(forecast_start, gmt7_now)
-            fore_df = fetch_climate_forecast()
-            add_df = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
-    
-        # Merge all (historical + forecast climate)
+            hist = fetch_climate_historical(forecast_start, gmt7_now)
+            fore = fetch_climate_forecast()
+            climate_fore = pd.concat([hist, fore]).drop_duplicates(subset="Datetime")
+
+        forecast_df = pd.merge(forecast_df, climate_fore, on="Datetime", how="left")
+        forecast_df["Water_level"] = np.nan
+        forecast_df["Source"] = "Forecast"
+
+        # -----------------------------
+        # Prepare full_df for prediction
+        # -----------------------------
         full_df = pd.concat([merged_df, forecast_df], ignore_index=True).sort_values("Datetime")
-        full_df = pd.merge(full_df, add_df, on="Datetime", how="left")
-    
-        full_df["Source"] = np.where(full_df["Datetime"] < start_datetime, "Historical", "Forecast")
-    
-        # 4️⃣ Start Forecasting (Auto-regressive)
-        st.info("Running 7-day hourly water level forecasting...")
-    
-        # Use last 24 observed water levels for initial lags
-        history_wl = list(wl_hourly["Water_level"].values[-24:])
-    
-        # Prepare a copy for iterative prediction
-        for i in range(168):  # 7x24 hours
-            target_time = start_datetime + timedelta(hours=i + 1)
-            idx = full_df.index[full_df["Datetime"] == target_time][0]
-    
-            # Build feature vector according to lag structure
+        full_df.reset_index(drop=True, inplace=True)
+
+        # Function to build lagged features
+        def build_lag_features(df, current_time):
             feature = {}
-    
-            # Rainfall lags (Lag17-Lag24)
-            for lag in range(17, 25):
-                lag_time = target_time - timedelta(hours=lag)
-                val = full_df.loc[full_df["Datetime"] == lag_time, "Rainfall"]
-                feature[f"Rainfall_Lag{lag}"] = val.values[0] if not val.empty else np.nan
-    
-            # Cloud_cover lags (Lag1-Lag24)
-            for lag in range(1, 25):
-                lag_time = target_time - timedelta(hours=lag)
-                val = full_df.loc[full_df["Datetime"] == lag_time, "Cloud_cover"]
-                feature[f"Cloud_cover_Lag{lag}"] = val.values[0] if not val.empty else np.nan
-    
-            # Surface_pressure lags (Lag1-Lag24)
-            for lag in range(1, 25):
-                lag_time = target_time - timedelta(hours=lag)
-                val = full_df.loc[full_df["Datetime"] == lag_time, "Surface_pressure"]
-                feature[f"Surface_pressure_Lag{lag}"] = val.values[0] if not val.empty else np.nan
-    
-            # Soil_temperature lags (Lag9-Lag11)
-            for lag in range(9, 12):
-                lag_time = target_time - timedelta(hours=lag)
-                val = full_df.loc[full_df["Datetime"] == lag_time, "Soil_temperature"]
-                feature[f"Soil_temperature_Lag{lag}"] = val.values[0] if not val.empty else np.nan
-    
-            # Soil_moisture lags (Lag1-Lag24)
-            for lag in range(1, 25):
-                lag_time = target_time - timedelta(hours=lag)
-                val = full_df.loc[full_df["Datetime"] == lag_time, "Soil_moisture"]
-                feature[f"Soil_moisture_Lag{lag}"] = val.values[0] if not val.empty else np.nan
-    
-            # Water_level lags (Lag1-Lag24)
-            for lag in range(1, 25):
-                if len(history_wl) >= lag:
-                    feature[f"Water_level_Lag{lag}"] = history_wl[-lag]
-                else:
-                    feature[f"Water_level_Lag{lag}"] = np.nan
-    
-            # Convert to DataFrame and predict
-            X_input = pd.DataFrame([feature])
-            y_pred = model.predict(X_input)[0]
-    
-            # Update dataframe and history
-            full_df.loc[idx, "Water_level"] = round(float(y_pred), 2)
-            history_wl.append(y_pred)
-    
-        # 5️⃣ Round and style table
-        for col in full_df.select_dtypes(include=np.number).columns:
-            full_df[col] = full_df[col].round(2)
-    
-        def highlight_forecast(row):
-            color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
-            return [color] * len(row)
-    
-        format_dict = {col: "{:.2f}" for col in full_df.select_dtypes(include=np.number).columns}
-        styled_df = full_df.style.apply(highlight_forecast, axis=1).format(format_dict)
-    
-        st.dataframe(
-            styled_df,
-            use_container_width=True,
-            height=400
-        )
+            # Water level lags 1-24
+            for lag in range(1,25):
+                lag_time = current_time - pd.Timedelta(hours=lag)
+                mask = df["Datetime"] == lag_time
+                feature[f"Water_level_Lag{lag}"] = df.loc[mask, "Water_level"].iloc[0] if mask.any() else np.nan
+            # Rainfall lags 17-24
+            for lag in range(17,25):
+                lag_time = current_time - pd.Timedelta(hours=lag)
+                mask = df["Datetime"] == lag_time
+                feature[f"Rainfall_Lag{lag}"] = df.loc[mask, "Rainfall"].iloc[0] if mask.any() and "Rainfall" in df.columns else np.nan
+            # Cloud_cover lags 1-24
+            for lag in range(1,25):
+                lag_time = current_time - pd.Timedelta(hours=lag)
+                mask = df["Datetime"] == lag_time
+                feature[f"Cloud_cover_Lag{lag}"] = df.loc[mask, "Cloud_cover"].iloc[0] if mask.any() and "Cloud_cover" in df.columns else np.nan
+            # Surface_pressure lags 1-24
+            for lag in range(1,25):
+                lag_time = current_time - pd.Timedelta(hours=lag)
+                mask = df["Datetime"] == lag_time
+                feature[f"Surface_pressure_Lag{lag}"] = df.loc[mask, "Surface_pressure"].iloc[0] if mask.any() and "Surface_pressure" in df.columns else np.nan
+            # Soil_temperature lags 9-11
+            for lag in range(9,12):
+                lag_time = current_time - pd.Timedelta(hours=lag)
+                mask = df["Datetime"] == lag_time
+                feature[f"Soil_temperature_Lag{lag}"] = df.loc[mask, "Soil_temperature"].iloc[0] if mask.any() and "Soil_temperature" in df.columns else np.nan
+            # Soil_moisture lags 1-24
+            for lag in range(1,25):
+                lag_time = current_time - pd.Timedelta(hours=lag)
+                mask = df["Datetime"] == lag_time
+                feature[f"Soil_moisture_Lag{lag}"] = df.loc[mask, "Soil_moisture"].iloc[0] if mask.any() and "Soil_moisture" in df.columns else np.nan
+            return feature
+
+        # -----------------------------
+        # Sequential prediction 7x24 hours
+        # -----------------------------
+        forecast_hours = full_df.loc[full_df["Source"]=="Forecast","Datetime"]
+        for current_time in forecast_hours:
+            feature_dict = build_lag_features(full_df, current_time)
+            feature_df = pd.DataFrame([feature_dict])
+            pred = model.predict(feature_df)[0]
+            full_df.loc[full_df["Datetime"]==current_time, "Water_level"] = round(pred,2)
+
+        # -----------------------------
+        # Display final dataframe
+        # -----------------------------
+        st.subheader("Water Level + Climate Data + Forecast")
+        display_cols = ["Datetime","Water_level","Rainfall","Cloud_cover","Surface_pressure","Soil_temperature","Soil_moisture","Source"]
+        st.dataframe(full_df[display_cols], use_container_width=True, height=500)
