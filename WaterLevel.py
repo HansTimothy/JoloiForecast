@@ -145,21 +145,26 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
 # -----------------------------
 if wl_hourly is not None:
     if st.button("Fetch Climate Data"):
+        # Ambil range historical dari data water level
         start_dt = wl_hourly["Datetime"].min()
         end_dt = wl_hourly["Datetime"].max()
         climate_df = fetch_climate_historical(start_dt, end_dt)
 
+        # Merge historical water level + climate
         merged_df = (
             pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
             .sort_values(by="Datetime", ascending=True)
         )
+        merged_df["Source"] = "Historical"
 
-        # Generate next 7x24 hours
-        next_hours = [start_datetime + timedelta(hours=i) for i in range(1, 168 + 1)]
-        forecast_df = pd.DataFrame({"Datetime": next_hours})
+        # ================================
+        # Buat dataframe untuk 7x24 jam forecast
+        # ================================
+        forecast_hours = [start_datetime + timedelta(hours=i) for i in range(0, 168)]  # mulai dari jam start
+        forecast_df = pd.DataFrame({"Datetime": forecast_hours})
+
+        # Tentukan sumber data climate
         forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
-
-        # Determine source of climate data
         if forecast_end < gmt7_now:
             add_df = fetch_climate_historical(forecast_start, forecast_end)
         elif forecast_start > gmt7_now:
@@ -169,43 +174,31 @@ if wl_hourly is not None:
             fore_df = fetch_climate_forecast()
             add_df = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
 
+        # Merge climate ke dataframe forecast
         forecast_merged = pd.merge(forecast_df, add_df, on="Datetime", how="left")
         forecast_merged["Water_level"] = np.nan
         forecast_merged["Source"] = "Forecast"
 
-        merged_df["Source"] = "Historical"
+        # ================================
+        # Gabungkan historical + forecast
+        # ================================
+        final_df = pd.concat([merged_df, forecast_merged], ignore_index=True)
+        final_df = final_df.sort_values(by="Datetime", ascending=True)
 
-        final_df = (
-            pd.concat([merged_df, forecast_merged], ignore_index=True)
-            .sort_values(by="Datetime", ascending=True)
-        )
-
-        # Round only numeric columns
+        # Round semua kolom numerik
         final_df = final_df.apply(lambda x: np.round(x, 2) if np.issubdtype(x.dtype, np.number) else x)
 
-        # -----------------------------
-        # Display Water Level + Climate Data
-        # -----------------------------
+        # ================================
+        # Tampilkan di Streamlit
+        # ================================
         st.subheader("Water Level + Climate Data")
-        
-        # Ensure numeric columns are rounded and formatted to 2 decimals visually
-        for col in final_df.select_dtypes(include=np.number).columns:
-            final_df[col] = final_df[col].round(2)
-        
-        # Function for highlighting forecast rows
+
+        # Highlight forecast
         def highlight_forecast(row):
             color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
             return [color] * len(row)
-        
-        # Format all numeric columns to 2 decimal places in the style
+
         format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
-        
-        # Apply highlight + format
         styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
-        
-        # Display with auto-fit size
-        st.dataframe(
-            styled_df,
-            use_container_width=True,
-            height=400  # adjust as needed
-        )
+
+        st.dataframe(styled_df, use_container_width=True, height=400)
