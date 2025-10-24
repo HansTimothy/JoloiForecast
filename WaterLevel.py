@@ -65,7 +65,7 @@ if uploaded_file is not None:
             wl_hourly = (
                 df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
                 .rename(columns={"Level Air": "Water_level"})
-                .sort_values(by="Datetime", ascending=False)
+                .sort_values(by="Datetime", ascending=True)
                 .round(2)
             )
 
@@ -105,7 +105,6 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
         })
 
         df["Datetime"] = df["Datetime"].dt.floor("H")
-        df = df.sort_values(by="Datetime", ascending=False).round(2)
         return df
 
     except Exception as e:
@@ -135,7 +134,6 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         })
 
         df["Datetime"] = df["Datetime"].dt.floor("H")
-        df = df.sort_values(by="Datetime", ascending=False).round(2)
         return df
 
     except Exception as e:
@@ -153,7 +151,7 @@ if wl_hourly is not None:
 
         merged_df = (
             pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
-            .sort_values(by="Datetime", ascending=False)
+            .sort_values(by="Datetime", ascending=True)
             .round(2)
         )
 
@@ -180,7 +178,7 @@ if wl_hourly is not None:
 
         final_df = (
             pd.concat([merged_df, forecast_merged], ignore_index=True)
-            .sort_values(by="Datetime", ascending=False)
+            .sort_values(by="Datetime", ascending=True)
             .round(2)
         )
 
