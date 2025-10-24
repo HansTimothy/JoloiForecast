@@ -204,32 +204,9 @@ if wl_hourly is not None:
         styled_df = (
             final_df.style
             .apply(highlight_blue, axis=1)
-            .format(precision=2)
-            .hide(axis="columns", subset=["Source"])
+            .format(precision=2)  # display numbers with 2 decimals
+            .hide(axis="columns", subset=["Source"])  # hide the 'Source' column
         )
         
-        # Custom CSS to make table compact and single-row
-        table_css = """
-        <style>
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            table-layout: fixed;
-        }
-        th, td {
-            text-align: center !important;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            padding: 4px 6px !important;
-            border: 1px solid #ccc;
-            font-size: 13px;
-        }
-        th {
-            background-color: #f0f2f6;
-        }
-        </style>
-        """
-        
-        # Render styled dataframe with custom CSS
-        st.markdown(table_css + styled_df.to_html(escape=False), unsafe_allow_html=True)
+        # Render styled dataframe with HTML (to keep color)
+        st.markdown(styled_df.to_html(escape=False), unsafe_allow_html=True)
