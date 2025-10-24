@@ -102,9 +102,9 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
         # Buat dataframe
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
-            "Pressure": data["hourly"]["surface_pressure"],
+            "Surface_pressure": data["hourly"]["surface_pressure"],
             "Cloud_cover": data["hourly"]["cloud_cover"],
-            "Soil_temp": data["hourly"]["soil_temperature_0_to_7cm"],
+            "Soil_temperature": data["hourly"]["soil_temperature_0_to_7cm"],
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"],
             "Rainfall": data["hourly"]["rain"]
         })
