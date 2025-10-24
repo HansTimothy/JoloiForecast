@@ -49,12 +49,14 @@ if uploaded_file is not None:
             df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
             start_limit = start_datetime - pd.Timedelta(hours=24)
             df_wl_filtered = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
+
             wl_hourly = (
                 df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
                 .rename(columns={"Level Air": "Water_level"})
                 .sort_values(by="Datetime", ascending=True)
                 .round(2)
             )
+
             st.success("Successfully uploaded 24-hour water level data before start time.")
             st.dataframe(wl_hourly)
     except Exception as e:
@@ -127,26 +129,24 @@ def create_lag_features(df, lag_config):
     return df_lag
 
 # -----------------------------
-# Run 7-Day Forecast
+# Run forecast
 # -----------------------------
 if wl_hourly is not None:
     if st.button("Run 7-Day Forecast"):
-        with st.spinner("Fetching climate data and performing 7-day forecast..."):
-            # Fetch climate forecast
-            climate_forecast = fetch_climate_forecast()
+        with st.spinner("Fetching climate data and performing forecast..."):
+            # Fetch historical climate for last 24h
+            last_climate = fetch_climate_historical(start_datetime - timedelta(hours=24), start_datetime)
+            df_hist = pd.merge(wl_hourly, last_climate, on="Datetime", how="left").sort_values("Datetime")
 
-            # Merge last 24h water level + historical climate
-            hist_climate = fetch_climate_historical(start_datetime - timedelta(hours=24), start_datetime)
-            df_hist = pd.merge(wl_hourly, hist_climate, on="Datetime", how="left").sort_values("Datetime")
-
-            # Prepare forecast dataframe
-            forecast_hours = 168  # 7x24
+            # Forecast DataFrame (7x24h)
+            forecast_hours = 168
             forecast_index = [start_datetime + timedelta(hours=i) for i in range(forecast_hours)]
             df_forecast = pd.DataFrame({"Datetime": forecast_index})
+            climate_forecast = fetch_climate_forecast()
             df_forecast = pd.merge(df_forecast, climate_forecast, on="Datetime", how="left")
             df_forecast["Water_level"] = np.nan
 
-            # Lag configuration (highlighted features)
+            # Lag config for highlighted features
             lag_config = {
                 "Rainfall": list(range(17,25)),
                 "Cloud_cover": list(range(1,25)),
@@ -156,37 +156,39 @@ if wl_hourly is not None:
                 "Water_level": list(range(1,25))
             }
 
-            # Combine historical + forecast for iterative prediction
+            # Combine historical + forecast
             df_full = pd.concat([df_hist, df_forecast], ignore_index=True).sort_values("Datetime").reset_index(drop=True)
 
-            # Iterative per-hour prediction
+            # Progress bar
+            progress_bar = st.progress(0)
+            total = len(df_full) - len(df_hist)
+
+            # Iterative prediction
             for i in range(len(df_hist), len(df_full)):
                 df_lagged = create_lag_features(df_full.iloc[:i], lag_config)
                 lag_cols = [c for c in df_lagged.columns if "_Lag" in c]
                 X_pred = df_lagged[lag_cols].iloc[-1].values.reshape(1, -1)
                 y_hat = model.predict(X_pred)[0]
                 df_full.at[i, "Water_level"] = y_hat
+                progress_bar.progress((i - len(df_hist) + 1) / total)
 
-            # -----------------------------
-            # Prepare final display
-            # -----------------------------
+            # Final display
             final_display = df_full[["Datetime","Water_level","Rainfall","Cloud_cover",
                                      "Surface_pressure","Soil_temperature","Soil_moisture"]].copy()
             final_display["Source"] = ["Historical"]*len(df_hist) + ["Forecast"]*len(df_forecast)
 
-            # Round numeric columns to 2 decimals
+            # Round numeric
             for col in final_display.select_dtypes(include=np.number).columns:
                 final_display[col] = final_display[col].round(2)
 
             # Drop rows with NaN
             final_display = final_display.dropna(subset=final_display.select_dtypes(include=np.number).columns)
 
-            # Highlight forecast rows
+            # Highlight forecast
             def highlight_forecast(row):
                 color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
                 return [color]*len(row)
 
-            styled_df = final_display.style.apply(highlight_forecast, axis=1).format("{:.2f}")
-
+            styled_df = final_display.style.apply(highlight_forecast, axis=1)
             st.subheader("Water Level + Climate Forecast")
             st.dataframe(styled_df, use_container_width=True, height=500)
