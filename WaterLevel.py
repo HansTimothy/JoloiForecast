@@ -80,7 +80,6 @@ if uploaded_file is not None:
 def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
     start_date = start_dt.date().isoformat()
     end_date = end_dt.date().isoformat()
-    st.info(f"Fetching climate data...")
 
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
