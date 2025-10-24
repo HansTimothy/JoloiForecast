@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, time
 # -----------------------------
 # Load trained model
 # -----------------------------
-model = joblib.load("xgb_waterlevel_hourly_model.pkl")
+best_model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 
 st.title("🌊 Water Level Forecast Dashboard")
 
@@ -80,7 +80,6 @@ if uploaded_file is not None:
 def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
     start_date = start_dt.date().isoformat()
     end_date = end_dt.date().isoformat()
-
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={lat}&longitude={lon}"
@@ -88,12 +87,10 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
         f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain"
         f"&timezone=Asia%2FBangkok"
     )
-
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
             "Rainfall": data["hourly"]["rain"],
@@ -101,12 +98,9 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
             "Surface_pressure": data["hourly"]["surface_pressure"],
             "Soil_temperature": data["hourly"]["soil_temperature_0_to_7cm"],
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"]
-            
         })
-
         df["Datetime"] = df["Datetime"].dt.floor("H")
         return df
-
     except Exception as e:
         st.error(f"Failed to fetch historical climate data: {e}")
         return pd.DataFrame()
@@ -118,12 +112,10 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         f"&hourly=rain,surface_pressure,cloud_cover,soil_moisture_0_to_1cm,soil_temperature_0cm"
         f"&timezone=Asia%2FBangkok&forecast_days=14"
     )
-
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
             "Rainfall": data["hourly"]["rain"],
@@ -132,10 +124,8 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
             "Soil_temperature": data["hourly"]["soil_temperature_0cm"],
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"]
         })
-
         df["Datetime"] = df["Datetime"].dt.floor("H")
         return df
-
     except Exception as e:
         st.error(f"Failed to fetch forecast climate data: {e}")
         return pd.DataFrame()
@@ -180,32 +170,58 @@ if wl_hourly is not None:
             .sort_values(by="Datetime", ascending=True)
         )
 
-        # Round only numeric columns
+        # Round numeric columns
         final_df = final_df.apply(lambda x: np.round(x, 2) if np.issubdtype(x.dtype, np.number) else x)
 
         # -----------------------------
-        # Display Water Level + Climate Data
+        # Rolling Forecast using XGBoost
         # -----------------------------
-        st.subheader("Water Level + Climate Data")
-        
-        # Ensure numeric columns are rounded and formatted to 2 decimals visually
-        for col in final_df.select_dtypes(include=np.number).columns:
-            final_df[col] = final_df[col].round(2)
-        
-        # Function for highlighting forecast rows
-        def highlight_forecast(row):
-            color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
-            return [color] * len(row)
-        
-        # Format all numeric columns to 2 decimal places in the style
+        # List highlighted features sesuai training
+        highlighted_features = [
+            "Rainfall_Lag17","Rainfall_Lag18","Rainfall_Lag19","Rainfall_Lag20","Rainfall_Lag21","Rainfall_Lag22","Rainfall_Lag23","Rainfall_Lag24",
+            "Cloud_cover_Lag1","Cloud_cover_Lag2","Cloud_cover_Lag3","Cloud_cover_Lag4","Cloud_cover_Lag5","Cloud_cover_Lag6","Cloud_cover_Lag7",
+            "Surface_pressure_Lag1","Surface_pressure_Lag2","Surface_pressure_Lag3","Surface_pressure_Lag4","Surface_pressure_Lag5","Surface_pressure_Lag6",
+            "Soil_temperature_Lag9","Soil_temperature_Lag10","Soil_temperature_Lag11",
+            "Soil_moisture_Lag1","Soil_moisture_Lag2","Soil_moisture_Lag3","Soil_moisture_Lag4","Soil_moisture_Lag5","Soil_moisture_Lag6",
+            "Water_level_Lag1","Water_level_Lag2","Water_level_Lag3","Water_level_Lag4","Water_level_Lag5"
+        ]
+
+        # Buat kolom prediksi
+        final_df["Water_level_pred"] = final_df["Water_level"].copy()
+
+        # Forecast secara iteratif
+        forecast_idx = final_df.index[final_df["Source"]=="Forecast"]
+        for idx in forecast_idx:
+            lag_data = {}
+            for feat in highlighted_features:
+                base, lag = feat.rsplit("_Lag", 1)
+                lag = int(lag)
+                lag_idx = final_df.index.get_loc(idx) - lag
+                if lag_idx >= 0:
+                    lag_val = final_df.iloc[lag_idx]["Water_level_pred"] if base=="Water_level" else final_df.iloc[lag_idx][base]
+                    lag_data[feat] = lag_val
+                else:
+                    lag_data[feat] = np.nan
+
+            if any(pd.isna(list(lag_data.values()))):
+                continue
+
+            X_pred = pd.DataFrame([lag_data])
+            y_hat = best_model.predict(X_pred)[0]
+            final_df.at[idx, "Water_level_pred"] = y_hat
+
+        final_df["Water_level_pred"] = final_df["Water_level_pred"].round(2)
+
+        # -----------------------------
+        # Display Water Level + Climate + Forecast
+        # -----------------------------
+        st.subheader("Water Level Forecast (XGBoost)")
+
+        def highlight_forecast_pred(row):
+            color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
+            return [color]*len(row)
+
         format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
-        
-        # Apply highlight + format
-        styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
-        
-        # Display with auto-fit size
-        st.dataframe(
-            styled_df,
-            use_container_width=True,
-            height=400  # adjust as needed
-        )
+
+        styled_df = final_df.style.apply(highlight_forecast_pred, axis=1).format(format_dict)
+        st.dataframe(styled_df, use_container_width=True, height=400)
