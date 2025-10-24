@@ -5,13 +5,12 @@ import joblib
 import numpy as np
 from datetime import datetime, timedelta, time
 from xgboost import XGBRegressor
+import time as t
+from io import BytesIO
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
-import time as t
-import io
 
 # -----------------------------
 # Load trained model
@@ -299,57 +298,63 @@ if upload_success and st.button("Run 7-Day Forecast"):
     # -----------------------------
     # DOWNLOAD OPTIONS
     # -----------------------------
-    st.subheader("📥 Download Forecast Results")
+    # Ambil hanya dua kolom
+    export_df = final_df[["Datetime", "Water_level"]].copy()
+    export_df["Datetime"] = export_df["Datetime"].astype(str)
     
-    # Convert final_df to downloadable formats
-    csv = final_df.to_csv(index=False).encode('utf-8')
+    # ===== CSV =====
+    csv_buffer = export_df.to_csv(index=False).encode('utf-8')
     
-    # Excel
-    excel_buffer = io.BytesIO()
+    # ===== Excel =====
+    excel_buffer = BytesIO()
     with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-        final_df.to_excel(writer, index=False, sheet_name='Forecast')
+        export_df.to_excel(writer, index=False, sheet_name="Forecast")
     excel_buffer.seek(0)
     
-    # PDF (simple table using reportlab)
-    pdf_buffer = io.BytesIO()
+    # ===== PDF =====
+    pdf_buffer = BytesIO()
     doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
-    elements = []
-    elements.append(Paragraph("Water Level Forecast Results", getSampleStyleSheet()["Title"]))
-    table_data = [final_df.columns.tolist()] + final_df.values.tolist()
-    table = Table(table_data)
+    styles = getSampleStyleSheet()
+    data = [export_df.columns.tolist()] + export_df.values.tolist()
+    
+    table = Table(data)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#007acc")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
     ]))
-    elements.append(table)
+    elements = [Paragraph("Water Level Forecast Results", styles["Title"]), table]
     doc.build(elements)
-    pdf_buffer.seek(0)
     
+    # -----------------------------
+    # Tombol rata tengah
+    # -----------------------------
     col1, col2, col3 = st.columns(3)
-    
     with col1:
         st.download_button(
-            label="⬇️ Download CSV",
-            data=csv,
-            file_name="forecast_results.csv",
-            mime="text/csv"
+            label="📄 CSV",
+            data=csv_buffer,
+            file_name="water_level_forecast.csv",
+            mime="text/csv",
+            use_container_width=True
         )
-    
     with col2:
         st.download_button(
-            label="⬇️ Download Excel",
+            label="📘 Excel",
             data=excel_buffer,
-            file_name="forecast_results.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            file_name="water_level_forecast.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
         )
-    
     with col3:
         st.download_button(
-            label="🖨️ Print (PDF)",
-            data=pdf_buffer,
-            file_name="forecast_results.pdf",
-            mime="application/pdf"
+            label="📑 PDF",
+            data=pdf_buffer.getvalue(),
+            file_name="water_level_forecast.pdf",
+            mime="application/pdf",
+            use_container_width=True
         )
