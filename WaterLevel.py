@@ -184,7 +184,7 @@ if wl_hourly is not None:
         final_df = final_df.apply(lambda x: np.round(x, 2) if np.issubdtype(x.dtype, np.number) else x)
 
         # -----------------------------
-        # Highlight forecast rows (blue) but hide "Source" column
+        # Display Water Level + Climate Data
         # -----------------------------
         st.subheader("Water Level + Climate Data")
         
@@ -192,11 +192,17 @@ if wl_hourly is not None:
         for col in final_df.select_dtypes(include=np.number).columns:
             final_df[col] = final_df[col].round(2)
         
-        # Add row color tag for forecast
-        final_df["Row_color"] = np.where(final_df["Source"] == "Forecast", "background-color: lightblue", "")
+        # Create highlight for Forecast rows
+        def highlight_forecast(row):
+            color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
+            return [color] * len(row)
         
-        # Hide 'Source' but keep highlight
-        display_df = final_df.drop(columns=["Source"])
+        # Use Streamlit dataframe (scrollable & auto-fit)
+        styled_df = final_df.style.apply(highlight_forecast, axis=1)
         
-        # Use Streamlit dataframe (scrollable & responsive)
-        st.dataframe(display_df.style.apply(lambda x: [x["Row_color"]] * len(x), axis=1).hide(axis="columns", subset=["Row_color"]))
+        # Display nicely sized dataframe
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            height=400  # adjust height if needed (e.g. 500 for longer tables)
+        )
