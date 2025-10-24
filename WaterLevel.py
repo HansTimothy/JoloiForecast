@@ -58,7 +58,6 @@ wl_hourly = None
 if uploaded_file is not None:
     try:
         df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
-        df_wl = df_wl.sort_values(by="Datetime", ascending=False)
         if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
             st.error("File harus memiliki kolom 'Datetime' dan 'Level Air'")
         else:
@@ -72,6 +71,7 @@ if uploaded_file is not None:
             # Group by jam dan ambil rata-rata
             wl_hourly = df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
             wl_hourly.rename(columns={"Level Air": "Water_level"}, inplace=True)
+            wl_hourly = wl_hourly.sort_values(by="Datetime", ascending=False)
 
             st.success("Data water level 24 jam sebelum start berhasil diupload")
             st.dataframe(wl_hourly.style.format({"Water_level":"{:.2f}"}))
