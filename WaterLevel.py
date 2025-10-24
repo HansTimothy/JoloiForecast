@@ -262,7 +262,7 @@ if st.session_state.get("forecast_done", False):
     hist_df = final_df[final_df["Source"]=="Historical"]
     forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
     
-    # Historical trace di atas Forecast
+    # 1️⃣ Historical trace
     fig.add_trace(go.Scatter(
         x=hist_df["Datetime"],
         y=hist_df["Water_level"],
@@ -273,16 +273,22 @@ if st.session_state.get("forecast_done", False):
         hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
     ))
     
+    # 2️⃣ Forecast trace, mulai dari historical terakhir untuk koneksi visual
     if not forecast_df_plot.empty:
-        # Forecast trace, mulai dari titik forecast pertama tanpa menghubungkan historical terakhir
+        # Gabungkan titik terakhir historical dengan forecast pertama untuk visual continuity
+        x_forecast = pd.concat([pd.Series([hist_df["Datetime"].iloc[-1]]), forecast_df_plot["Datetime"]])
+        y_forecast = pd.concat([pd.Series([hist_df["Water_level"].iloc[-1]]), forecast_df_plot["Water_level"]])
+        
         fig.add_trace(go.Scatter(
-            x=forecast_df_plot["Datetime"],
-            y=forecast_df_plot["Water_level"],
+            x=x_forecast,
+            y=y_forecast,
             mode="lines+markers",
             name="Forecast",
             line=dict(color="orange", width=2),
             marker=dict(size=4),
-            hovertemplate="Datetime: %{x}<br>Predicted Water Level: %{y:.2f} m"
+            # Hanya forecast point (exclude historical last) yang muncul di hover
+            hovertemplate=[None] + [f"Datetime: {dt}<br>Forecast Water Level: {wl:.2f} m" 
+                                    for dt, wl in zip(forecast_df_plot["Datetime"], forecast_df_plot["Water_level"])]
         ))
     
         # RMSE shading
