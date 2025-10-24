@@ -203,10 +203,10 @@ if wl_hourly is not None:
         # Apply highlight and formatting
         styled_df = (
             final_df.style
-            .apply(highlight_blue, axis=2)
+            .apply(highlight_blue, axis=1)
             .format(precision=2)  # display numbers with 2 decimals
             .hide(axis="columns", subset=["Source"])  # hide the 'Source' column
         )
         
         # Render styled dataframe with HTML (to keep color)
-        st.markdown(styled_df.to_html(escape=False), unsafe_allow_html=True)
+        st.markdown(styled_df.to_html(escape=False))
