@@ -63,6 +63,7 @@ if uploaded_file is not None:
         else:
             # Konversi ke datetime naive
             df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
+            df_wl = df_wl.sort_values(by="Datetime", ascending=False)
             
             # Filter 24 jam sebelum start_datetime
             start_limit = start_datetime - pd.Timedelta(hours=24)
@@ -128,6 +129,7 @@ if wl_hourly is not None:
         
         # Merge on Datetime
         merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
+        merged_df = merged_df.sort_values(by="Datetime", ascending=False)
         
         # Pastikan numerik
         numeric_cols = ["Water_level","Pressure","Cloud_cover","Soil_temp","Soil_moisture","Rain"]
