@@ -135,55 +135,64 @@ def create_lag_features(df, lag_config):
 # -----------------------------
 if wl_hourly is not None:
     if st.button("Run 7-Day Forecast"):
-        # Fetch climate for forecast period
-        forecast_hours = 168  # 7x24
-        climate_forecast = fetch_climate_forecast()
-        
-        # Merge last historical water level + climate
-        last_hist = wl_hourly.copy()
-        last_climate = fetch_climate_historical(start_datetime - timedelta(hours=24), start_datetime)
-        df_hist = pd.merge(last_hist, last_climate, on="Datetime", how="left").sort_values("Datetime")
-        
-        # Prepare forecast DataFrame
-        forecast_index = [start_datetime + timedelta(hours=i) for i in range(forecast_hours)]
-        df_forecast = pd.DataFrame({"Datetime": forecast_index})
-        df_forecast["Water_level"] = np.nan
-        df_forecast = pd.merge(df_forecast, climate_forecast, on="Datetime", how="left")
-        
-        # Lag configuration: hanya untuk highlighted features
-        lag_config = {
-            "Rainfall": list(range(17,25)),
-            "Cloud_cover": list(range(1,25)),
-            "Surface_pressure": list(range(1,25)),
-            "Soil_temperature": list(range(9,12)),
-            "Soil_moisture": list(range(1,25)),
-            "Water_level": list(range(1,25))
-        }
-        
-        # Concatenate historical + forecast for iterative pred
-        df_full = pd.concat([df_hist, df_forecast], ignore_index=True).sort_values("Datetime").reset_index(drop=True)
-        
-        # Iterative prediction
-        for i in range(len(df_hist), len(df_full)):
-            df_lagged = create_lag_features(df_full.iloc[:i], lag_config)
-            # Select only lag columns
-            lag_cols = [c for c in df_lagged.columns if "_Lag" in c]
-            X_pred = df_lagged[lag_cols].iloc[-1].values.reshape(1, -1)
-            y_hat = model.predict(X_pred)[0]
-            df_full.at[i, "Water_level"] = y_hat
-        
-        # Display only relevant columns
-        final_display = df_full[["Datetime","Water_level","Rainfall","Cloud_cover","Surface_pressure","Soil_temperature","Soil_moisture"]].copy()
-        final_display["Source"] = ["Historical"]*len(df_hist) + ["Forecast"]*len(df_forecast)
-        
-        # Round numeric
-        final_display = final_display.round(2)
-        
-        # Highlight forecast
-        def highlight_forecast(row):
-            color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
-            return [color]*len(row)
-        
-        styled_df = final_display.style.apply(highlight_forecast, axis=1)
-        st.subheader("Water Level + Climate Forecast")
-        st.dataframe(styled_df, use_container_width=True, height=500)
+        with st.spinner("Fetching climate data and performing 7-day forecast"):
+            # Fetch climate for forecast period
+            forecast_hours = 168  # 7x24
+            climate_forecast = fetch_climate_forecast()
+            
+            # Merge last historical water level + climate
+            last_hist = wl_hourly.copy()
+            last_climate = fetch_climate_historical(start_datetime - timedelta(hours=24), start_datetime)
+            df_hist = pd.merge(last_hist, last_climate, on="Datetime", how="left").sort_values("Datetime")
+            
+            # Prepare forecast DataFrame
+            forecast_index = [start_datetime + timedelta(hours=i) for i in range(forecast_hours)]
+            df_forecast = pd.DataFrame({"Datetime": forecast_index})
+            df_forecast["Water_level"] = np.nan
+            df_forecast = pd.merge(df_forecast, climate_forecast, on="Datetime", how="left")
+            
+            # Lag configuration: hanya untuk highlighted features
+            lag_config = {
+                "Rainfall": list(range(17,25)),
+                "Cloud_cover": list(range(1,25)),
+                "Surface_pressure": list(range(1,25)),
+                "Soil_temperature": list(range(9,12)),
+                "Soil_moisture": list(range(1,25)),
+                "Water_level": list(range(1,25))
+            }
+            
+            # Concatenate historical + forecast for iterative pred
+            df_full = pd.concat([df_hist, df_forecast], ignore_index=True).sort_values("Datetime").reset_index(drop=True)
+            
+            # Iterative prediction
+            for i in range(len(df_hist), len(df_full)):
+                df_lagged = create_lag_features(df_full.iloc[:i], lag_config)
+                # Select only lag columns
+                lag_cols = [c for c in df_lagged.columns if "_Lag" in c]
+                X_pred = df_lagged[lag_cols].iloc[-1].values.reshape(1, -1)
+                y_hat = model.predict(X_pred)[0]
+                df_full.at[i, "Water_level"] = y_hat
+            
+            # -----------------------------
+            # Prepare final display
+            # -----------------------------
+            final_display = df_full[["Datetime","Water_level","Rainfall","Cloud_cover",
+                                     "Surface_pressure","Soil_temperature","Soil_moisture"]].copy()
+            final_display["Source"] = ["Historical"]*len(df_hist) + ["Forecast"]*len(df_forecast)
+            
+            # Round numeric columns to 2 decimals
+            for col in final_display.select_dtypes(include=np.number).columns:
+                final_display[col] = final_display[col].round(2)
+            
+            # Drop rows with any NaN in numeric columns
+            final_display = final_display.dropna(subset=final_display.select_dtypes(include=np.number).columns)
+            
+            # Highlight forecast rows
+            def highlight_forecast(row):
+                color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
+                return [color]*len(row)
+            
+            styled_df = final_display.style.apply(highlight_forecast, axis=1)
+            
+            st.subheader("Water Level + Climate Forecast")
+            st.dataframe(styled_df, use_container_width=True, height=500)
