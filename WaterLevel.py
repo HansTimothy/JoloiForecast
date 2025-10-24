@@ -80,7 +80,7 @@ if uploaded_file is not None:
 def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
     start_date = start_dt.date().isoformat()
     end_date = end_dt.date().isoformat()
-    st.info(f"Fetching historical climate data from {start_date} to {end_date} and forecast climate data")
+    st.info(f"Fetching climate data.")
 
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
@@ -191,5 +191,5 @@ if wl_hourly is not None:
         def highlight_blue(row):
             return ['background-color: lightblue' if row.get("Source") == "Forecast" else '' for _ in row]
 
-        st.subheader("Merged Water Level + Climate Data (Extended 7x24 Hours)")
+        st.subheader("Water Level + Climate Data")
         st.dataframe(display_df.style.apply(highlight_blue, axis=1))
