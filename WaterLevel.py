@@ -234,7 +234,7 @@ if st.session_state.get("forecast_done", False):
     rmse_est = 0.06
     fig = go.Figure()
     
-    # 2️⃣ Forecast line (tersambung dengan titik Historical terakhir)
+    # Forecast line (tersambung dengan titik Historical terakhir)
     forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
     if not forecast_df_plot.empty:
         # Ambil titik terakhir Historical
@@ -255,19 +255,7 @@ if st.session_state.get("forecast_done", False):
             hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
         ))
 
-        # 1️⃣ Historical line
-        hist_df = final_df[final_df["Source"]=="Historical"]
-        fig.add_trace(go.Scatter(
-            x=hist_df["Datetime"],
-            y=hist_df["Water_level"],
-            mode="lines+markers",
-            name="Historical",
-            line=dict(color="blue"),
-            marker=dict(size=4),
-            hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
-        ))
-    
-        # 3️⃣ RMSE area
+        # RMSE area
         rmse_y_upper = (forecast_plot_y + rmse_est)
         rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
         fig.add_trace(go.Scatter(
@@ -280,6 +268,18 @@ if st.session_state.get("forecast_done", False):
             showlegend=True,
             name=f"RMSE ±{rmse_est}"
         ))
+
+    # Historical line
+    hist_df = final_df[final_df["Source"]=="Historical"]
+    fig.add_trace(go.Scatter(
+        x=hist_df["Datetime"],
+        y=hist_df["Water_level"],
+        mode="lines+markers",
+        name="Historical",
+        line=dict(color="blue"),
+        marker=dict(size=4),
+        hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
+    ))
     
     fig.update_layout(
         xaxis_title="Datetime",
