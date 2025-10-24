@@ -209,4 +209,4 @@ if wl_hourly is not None:
         )
         
         # Render styled dataframe with HTML (to keep color)
-        st.markdown(styled_df.to_html(escape=False))
+        st.markdown(styled_df.to_html(escape=False), unsafe_allow_html=True)
