@@ -289,3 +289,48 @@ if upload_success and st.button("Run 7-Day Forecast"):
     )
     
     st.plotly_chart(fig, use_container_width=True)
+
+    # -----------------------------
+    # Download buttons
+    # -----------------------------
+    st.subheader("Export Data / Download")
+
+    # CSV
+    csv_buffer = io.StringIO()
+    final_df.to_csv(csv_buffer, index=False)
+    csv_bytes = csv_buffer.getvalue().encode('utf-8')
+    st.download_button(
+        label="Download CSV",
+        data=csv_bytes,
+        file_name="waterlevel_forecast.csv",
+        mime="text/csv"
+    )
+
+    # Excel
+    excel_buffer = io.BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+        final_df.to_excel(writer, index=False, sheet_name="Forecast")
+        writer.save()
+    st.download_button(
+        label="Download Excel",
+        data=excel_buffer.getvalue(),
+        file_name="waterlevel_forecast.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    # Print / PDF
+    st.markdown(
+        """
+        <button onclick="window.print()" style="
+            background-color:#4CAF50;
+            color:white;
+            padding:8px 16px;
+            border:none;
+            border-radius:4px;
+            cursor:pointer;
+            font-size:16px;">
+            Print (PDF)
+        </button>
+        """,
+        unsafe_allow_html=True
+    )
