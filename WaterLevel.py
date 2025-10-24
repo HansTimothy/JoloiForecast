@@ -187,12 +187,14 @@ if wl_hourly is not None:
         # Highlight forecast rows (blue) but hide "Source" column
         # -----------------------------
         st.subheader("Water Level + Climate Data")
-
-        def highlight_blue(row):
-            color = 'background-color: lightblue' if row["Source"] == "Forecast" else ''
-            return [color] * len(row)
-
-        styled_df = final_df.style.apply(highlight_blue, axis=1)
+        
+        # Columns to display (hide 'Source')
         display_cols = [col for col in final_df.columns if col != "Source"]
-
-        st.dataframe(styled_df[display_cols])
+        
+        # Function to highlight forecast rows
+        def highlight_blue(row):
+            return ['background-color: lightblue' if row["Source"] == "Forecast" else '' for _ in row]
+        
+        # Apply highlight and display
+        styled_df = final_df[display_cols + ["Source"]].style.apply(highlight_blue, axis=1)
+        st.dataframe(styled_df.hide(columns=["Source"]))
