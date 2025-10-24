@@ -11,6 +11,7 @@ from reportlab.lib.pagesizes import landscape, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
+import plotly.graph_objects as go
 
 # -----------------------------
 # Load trained model
@@ -20,7 +21,7 @@ model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 st.title("🌊 Water Level Forecast Dashboard")
 
 # -----------------------------
-# Inisialisasi session_state
+# Initialize session state
 # -----------------------------
 if "forecast_done" not in st.session_state:
     st.session_state["forecast_done"] = False
@@ -30,7 +31,7 @@ if "last_uploaded_name" not in st.session_state:
     st.session_state["last_uploaded_name"] = None
 
 # -----------------------------
-# Current time (GMT+7)
+# Current time (GMT+7), rounded up to next full hour
 # -----------------------------
 now_utc = datetime.utcnow()
 gmt7_now = now_utc + timedelta(hours=7)
@@ -50,12 +51,10 @@ selected_hour = int(selected_hour_str.split(":")[0])
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
 
-# -----------------------------
-# Reset forecast jika user ganti tanggal/jam
-# -----------------------------
+# Reset forecast if date/time changed
 if st.session_state["selected_datetime"] != start_datetime:
     st.session_state["selected_datetime"] = start_datetime
-    st.session_state["forecast_done"] = False  # reset hasil forecast lama
+    st.session_state["forecast_done"] = False
 
 # -----------------------------
 # Instructions
@@ -78,7 +77,7 @@ uploaded_file = st.file_uploader("Upload CSV File (AWLR Joloi Logs)", type=["csv
 wl_hourly = None
 upload_success = False
 
-# Reset forecast jika user upload file baru
+# Reset forecast if new file uploaded
 if uploaded_file is not None:
     if st.session_state["last_uploaded_name"] != uploaded_file.name:
         st.session_state["last_uploaded_name"] = uploaded_file.name
@@ -96,7 +95,7 @@ if uploaded_file is not None:
                 (df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)
             ]
 
-            # Cek kelengkapan 24 jam terakhir
+            # Check completeness
             expected_hours = pd.date_range(
                 start=start_limit, end=start_datetime - pd.Timedelta(hours=1), freq="H"
             )
@@ -122,41 +121,85 @@ if uploaded_file is not None:
         st.error(f"Failed to read file: {e}")
 
 # -----------------------------
+# Fetch climate functions
+# -----------------------------
+def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
+    try:
+        url = (
+            f"https://archive-api.open-meteo.com/v1/archive?"
+            f"latitude={lat}&longitude={lon}"
+            f"&start_date={start_dt.date()}&end_date={end_dt.date()}"
+            f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain"
+            f"&timezone=Asia%2FBangkok"
+        )
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        df = pd.DataFrame({
+            "Datetime": pd.to_datetime(data["hourly"]["time"]),
+            "Rainfall": data["hourly"]["rain"],
+            "Cloud_cover": data["hourly"]["cloud_cover"],
+            "Surface_pressure": data["hourly"]["surface_pressure"],
+            "Soil_temperature": data["hourly"]["soil_temperature_0_to_7cm"],
+            "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"],
+        })
+        df["Datetime"] = df["Datetime"].dt.floor("H")
+        return df
+    except Exception as e:
+        st.error(f"Failed to fetch climate data: {e}")
+        return pd.DataFrame()
+
+
+def fetch_climate_forecast(lat=-0.117, lon=114.1):
+    try:
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?"
+            f"latitude={lat}&longitude={lon}"
+            f"&hourly=rain,surface_pressure,cloud_cover,soil_moisture_0_to_1cm,soil_temperature_0cm"
+            f"&timezone=Asia%2FBangkok&forecast_days=14"
+        )
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        df = pd.DataFrame({
+            "Datetime": pd.to_datetime(data["hourly"]["time"]),
+            "Rainfall": data["hourly"]["rain"],
+            "Cloud_cover": data["hourly"]["cloud_cover"],
+            "Surface_pressure": data["hourly"]["surface_pressure"],
+            "Soil_temperature": data["hourly"]["soil_temperature_0cm"],
+            "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"],
+        })
+        df["Datetime"] = df["Datetime"].dt.floor("H")
+        return df
+    except Exception as e:
+        st.error(f"Failed to fetch climate data: {e}")
+        return pd.DataFrame()
+
+# -----------------------------
 # Run 7-Day Forecast
 # -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
 
-# Jika forecast sebelumnya sudah selesai, langsung tampilkan tanpa run ulang
-if "forecast_done" not in st.session_state:
-    st.session_state["forecast_done"] = False
-
-# Jalankan forecast jika tombol ditekan
 if upload_success and run_forecast:
-    st.session_state["forecast_done"] = False  # reset flag dulu
+    st.session_state["forecast_done"] = False
 
     progress_container = st.empty()
     progress_bar = st.progress(0)
-    
     total_steps = 3 + 168
     step_counter = 0
 
-    # 1️⃣ Fetch climate data
+    # 1️⃣ Fetch climate
     progress_container.markdown("Fetching climate data...")
     start_dt = wl_hourly["Datetime"].min()
     end_dt = wl_hourly["Datetime"].max()
     climate_hist = fetch_climate_historical(start_dt, end_dt)
-
     forecast_hours = [start_datetime + timedelta(hours=i) for i in range(0, 168)]
     forecast_df = pd.DataFrame({"Datetime": forecast_hours})
-    forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
-    if forecast_end < gmt7_now:
-        climate_forecast = fetch_climate_historical(forecast_start, forecast_end)
-    elif forecast_start > gmt7_now:
-        climate_forecast = fetch_climate_forecast()
-    else:
-        hist_df = fetch_climate_historical(forecast_start, gmt7_now)
-        fore_df = fetch_climate_forecast()
-        climate_forecast = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
+
+    hist_df = fetch_climate_historical(forecast_df["Datetime"].min(), datetime.now() + timedelta(hours=7))
+    fore_df = fetch_climate_forecast()
+    climate_forecast = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
+
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
@@ -168,15 +211,15 @@ if upload_success and run_forecast:
     forecast_merged["Water_level"] = np.nan
     forecast_merged["Source"] = "Forecast"
     final_df = pd.concat([merged_df, forecast_merged], ignore_index=True).sort_values("Datetime")
-    final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
+    final_df = final_df.apply(lambda x: np.round(x, 2) if np.issubdtype(x.dtype, np.number) else x)
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
-    # 3️⃣ Iterative forecast
+    # 3️⃣ Forecast iteratively
     progress_container.markdown("Forecasting water level for 7 days...")
     model_features = model.get_booster().feature_names
-    forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
-    
+    forecast_indices = final_df.index[final_df["Source"] == "Forecast"]
+
     for i, idx in enumerate(forecast_indices, start=1):
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
@@ -184,84 +227,67 @@ if upload_success and run_forecast:
 
         X_forecast = pd.DataFrame(columns=model_features, index=[0])
         for f in model_features:
-            base, lag = f.rsplit("_Lag",1)
+            base, lag = f.rsplit("_Lag", 1)
             lag = int(lag)
             try:
-                X_forecast.at[0,f] = final_df.loc[idx-lag, base]
+                X_forecast.at[0, f] = final_df.loc[idx - lag, base]
             except:
-                X_forecast.at[0,f] = final_df.loc[final_df["Source"]=="Historical", base].iloc[-lag]
+                X_forecast.at[0, f] = final_df.loc[final_df["Source"] == "Historical", base].iloc[-lag]
         X_forecast = X_forecast.astype(float)
-
         y_hat = model.predict(X_forecast)[0]
-        if y_hat < 0: y_hat = 0.0
-        final_df.at[idx, "Water_level"] = round(y_hat,2)
+        final_df.at[idx, "Water_level"] = max(0.0, round(y_hat, 2))
 
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
-    # Simpan hasil ke session_state
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
 
-
 # -----------------------------
-# Jika sudah pernah forecast, tampilkan hasilnya lagi tanpa run ulang
+# Show results if already done
 # -----------------------------
 if st.session_state.get("forecast_done", False):
-
     final_df = st.session_state["final_df"]
 
-    # Tabel hasil
     st.subheader("Water Level + Climate Data with Forecast")
     def highlight_forecast(row):
-        color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
-        return [color]*len(row)
-    format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
-    styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
-    st.dataframe(styled_df, use_container_width=True, height=500)
+        return ['background-color: #cfe9ff' if row["Source"] == "Forecast" else '' for _ in row]
+    st.dataframe(final_df.style.apply(highlight_forecast, axis=1), use_container_width=True, height=500)
 
     # Plot
-    import plotly.graph_objects as go
     st.subheader("Water Level Forecast Plot")
     rmse_est = 0.2
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=final_df.loc[final_df["Source"]=="Historical", "Datetime"],
-        y=final_df.loc[final_df["Source"]=="Historical", "Water_level"],
-        mode="lines+markers", name="Historical", line=dict(color="blue"), marker=dict(size=4)
+        x=final_df.query("Source=='Historical'")["Datetime"],
+        y=final_df.query("Source=='Historical'")["Water_level"],
+        mode="lines+markers", name="Historical", line=dict(color="blue")
     ))
     fig.add_trace(go.Scatter(
-        x=final_df.loc[final_df["Source"]=="Forecast", "Datetime"],
-        y=final_df.loc[final_df["Source"]=="Forecast", "Water_level"],
-        mode="lines+markers", name="Forecast", line=dict(color="orange"), marker=dict(size=4)
+        x=final_df.query("Source=='Forecast'")["Datetime"],
+        y=final_df.query("Source=='Forecast'")["Water_level"],
+        mode="lines+markers", name="Forecast", line=dict(color="orange")
     ))
-    forecast_y = final_df.loc[final_df["Source"]=="Forecast", "Water_level"]
-    forecast_x = final_df.loc[final_df["Source"]=="Forecast", "Datetime"]
+    forecast_x = final_df.query("Source=='Forecast'")["Datetime"]
+    forecast_y = final_df.query("Source=='Forecast'")["Water_level"]
     fig.add_trace(go.Scatter(
         x=pd.concat([forecast_x, forecast_x[::-1]]),
         y=pd.concat([forecast_y + rmse_est, (forecast_y - rmse_est).clip(0)[::-1]]),
-        fill='toself', fillcolor='rgba(255,165,0,0.2)',
-        line=dict(color='rgba(255,255,255,0)'), hoverinfo="skip",
-        showlegend=True, name="Forecast ± RMSE"
+        fill="toself", fillcolor="rgba(255,165,0,0.2)", line=dict(color="rgba(255,255,255,0)"),
+        name="Forecast ± RMSE"
     ))
-    fig.update_layout(
-        xaxis_title="Datetime", yaxis_title="Water Level",
-        title="Water Level Historical vs 7-Day Forecast",
-        template="plotly_white", hovermode="x unified"
-    )
+    fig.update_layout(title="Water Level Historical vs 7-Day Forecast", template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
 
     # -----------------------------
-    # Tombol download (tidak reset data)
+    # Download buttons (centered)
     # -----------------------------
     export_df = final_df[["Datetime", "Water_level"]].copy()
-    export_df["Water_level"] = export_df["Water_level"].round(2)
     export_df["Datetime"] = export_df["Datetime"].astype(str)
 
-    csv_buffer = export_df.to_csv(index=False).encode('utf-8')
-
+    csv_data = export_df.to_csv(index=False).encode("utf-8")
     excel_buffer = BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+    with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
         export_df.to_excel(writer, index=False, sheet_name="Forecast")
     excel_buffer.seek(0)
 
@@ -271,20 +297,16 @@ if st.session_state.get("forecast_done", False):
     data = [export_df.columns.tolist()] + export_df.values.tolist()
     table = Table(data)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#007acc")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#007acc")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
     ]))
-    elements = [Paragraph("Joloi Water Level Forecast", styles["Title"]), table]
-    doc.build(elements)
+    doc.build([Paragraph("Joloi Water Level Forecast", styles["Title"]), table])
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.download_button("Download CSV", csv_buffer, "water_level_forecast.csv", "text/csv", use_container_width=True)
+        st.download_button("Download CSV", csv_data, "water_level_forecast.csv", "text/csv", use_container_width=True)
     with col2:
         st.download_button("Download Excel", excel_buffer, "water_level_forecast.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
