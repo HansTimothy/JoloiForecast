@@ -231,11 +231,10 @@ if st.session_state.get("forecast_done", False):
     # Plot
     # -----------------------------
     st.subheader("Water Level Forecast Plot")
-    rmse_val = 0.06
-    
+    rmse_est = 0.06
     fig = go.Figure()
     
-    # Historical
+    # 1️⃣ Historical line
     hist_df = final_df[final_df["Source"]=="Historical"]
     fig.add_trace(go.Scatter(
         x=hist_df["Datetime"],
@@ -244,39 +243,50 @@ if st.session_state.get("forecast_done", False):
         name="Historical",
         line=dict(color="blue"),
         marker=dict(size=4),
-        hovertemplate="Historical<br>%{x}<br>Level: %{y:.2f} m<extra></extra>"
+        hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
     ))
     
-    # Forecast
-    fore_df = final_df[final_df["Source"]=="Forecast"]
-    fig.add_trace(go.Scatter(
-        x=fore_df["Datetime"],
-        y=fore_df["Water_level"],
-        mode="lines+markers",
-        name="Forecast",
-        line=dict(color="orange"),
-        marker=dict(size=4),
-        hovertemplate="Forecast<br>%{x}<br>Level: %{y:.2f} m<extra></extra>"
-    ))
+    # 2️⃣ Forecast line (tersambung dengan titik Historical terakhir)
+    forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
+    if not forecast_df_plot.empty:
+        # Ambil titik terakhir Historical
+        last_hist_time = hist_df["Datetime"].iloc[-1]
+        last_hist_value = hist_df["Water_level"].iloc[-1]
     
-    # RMSE ± shaded area
-    fig.add_trace(go.Scatter(
-        x=pd.concat([fore_df["Datetime"], fore_df["Datetime"][::-1]]),
-        y=pd.concat([fore_df["Water_level"] + rmse_val, (fore_df["Water_level"] - rmse_val).clip(0)[::-1]]),
-        fill='toself',
-        fillcolor='rgba(255,165,0,0.2)',
-        line=dict(color='rgba(255,255,255,0)'),
-        name=f"RMSE ±{rmse_val}",
-        hoverinfo="skip",
-        showlegend=True
-    ))
+        # Gabungkan dengan Forecast
+        forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
+        forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level"]])
+    
+        fig.add_trace(go.Scatter(
+            x=forecast_plot_x,
+            y=forecast_plot_y,
+            mode="lines+markers",
+            name="Forecast",
+            line=dict(color="orange"),
+            marker=dict(size=4),
+            hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
+        ))
+    
+        # 3️⃣ RMSE area
+        rmse_y_upper = (forecast_plot_y + rmse_est)
+        rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
+        fig.add_trace(go.Scatter(
+            x=pd.concat([forecast_plot_x, forecast_plot_x[::-1]]),
+            y=pd.concat([rmse_y_upper, rmse_y_lower[::-1]]),
+            fill='toself',
+            fillcolor='rgba(255,165,0,0.2)',
+            line=dict(color='rgba(255,255,255,0)'),
+            hoverinfo="skip",
+            showlegend=True,
+            name=f"RMSE ±{rmse_est}"
+        ))
     
     fig.update_layout(
         xaxis_title="Datetime",
         yaxis_title="Water Level",
         title="Water Level Historical vs 7-Day Forecast",
         template="plotly_white",
-        hovermode="closest"
+        hovermode="x unified"
     )
     
     st.plotly_chart(fig, use_container_width=True)
