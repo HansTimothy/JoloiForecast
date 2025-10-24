@@ -60,6 +60,14 @@ if uploaded_file is not None:
             start_limit = start_datetime - pd.Timedelta(hours=24)
             df_wl_filtered = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
 
+            # Cek kelengkapan 24 jam terakhir
+            expected_hours = pd.date_range(start=start_limit, end=start_datetime - pd.Timedelta(hours=1), freq='H')
+            actual_hours = pd.to_datetime(df_wl_filtered["Datetime"].sort_values().unique())
+            missing_hours = sorted(set(expected_hours) - set(actual_hours))
+            if missing_hours:
+                missing_str = ', '.join([dt.strftime("%Y-%m-%d %H:%M") for dt in missing_hours])
+                st.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
+
             wl_hourly = (
                 df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
                 .rename(columns={"Level Air": "Water_level"})
@@ -71,7 +79,6 @@ if uploaded_file is not None:
             st.dataframe(wl_hourly)
     except Exception as e:
         st.error(f"Failed to read file: {e}")
-
 # -----------------------------
 # Fetch climate functions
 # -----------------------------
