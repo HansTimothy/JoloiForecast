@@ -231,3 +231,61 @@ if upload_success and st.button("Run 7-Day Forecast"):
     format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
     styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
     st.dataframe(styled_df, use_container_width=True, height=500)
+
+    # ==============================
+    # Plot forecast with RMSE band
+    # ==============================
+    import plotly.graph_objects as go
+    
+    st.subheader("Water Level Forecast Plot")
+    
+    # Misal kita pakai RMSE global historis sebagai contoh (ganti sesuai data nyata)
+    # Atau bisa hitung RMSE dari prediksi model vs historical saat validasi
+    rmse_est = 0.2  # contoh RMSE, bisa diganti sesuai model
+    
+    fig = go.Figure()
+    
+    # Historical line
+    fig.add_trace(go.Scatter(
+        x=final_df.loc[final_df["Source"]=="Historical", "Datetime"],
+        y=final_df.loc[final_df["Source"]=="Historical", "Water_level"],
+        mode="lines+markers",
+        name="Historical",
+        line=dict(color="blue"),
+        marker=dict(size=4)
+    ))
+    
+    # Forecast line
+    fig.add_trace(go.Scatter(
+        x=final_df.loc[final_df["Source"]=="Forecast", "Datetime"],
+        y=final_df.loc[final_df["Source"]=="Forecast", "Water_level"],
+        mode="lines+markers",
+        name="Forecast",
+        line=dict(color="orange"),
+        marker=dict(size=4)
+    ))
+    
+    # RMSE/shaded area for forecast
+    forecast_y = final_df.loc[final_df["Source"]=="Forecast", "Water_level"]
+    forecast_x = final_df.loc[final_df["Source"]=="Forecast", "Datetime"]
+    fig.add_trace(go.Scatter(
+        x=pd.concat([forecast_x, forecast_x[::-1]]),
+        y=pd.concat([forecast_y + rmse_est, (forecast_y - rmse_est).clip(0)[::-1]]),
+        fill='toself',
+        fillcolor='rgba(255,165,0,0.2)',
+        line=dict(color='rgba(255,255,255,0)'),
+        hoverinfo="skip",
+        showlegend=True,
+        name="Forecast ± RMSE"
+    ))
+    
+    # Layout
+    fig.update_layout(
+        xaxis_title="Datetime",
+        yaxis_title="Water Level",
+        title="Water Level Historical vs 7-Day Forecast",
+        template="plotly_white",
+        hovermode="x unified"
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
