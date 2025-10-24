@@ -260,34 +260,44 @@ if st.session_state.get("forecast_done", False):
     fig = go.Figure()
     
     hist_df = final_df[final_df["Source"]=="Historical"]
+    forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
+    
+    # Historical trace di atas Forecast
     fig.add_trace(go.Scatter(
         x=hist_df["Datetime"],
         y=hist_df["Water_level"],
         mode="lines+markers",
         name="Historical",
-        line=dict(color="blue"),
+        line=dict(color="blue", width=2),
         marker=dict(size=4),
-        hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
+        hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m",
+        hoverlabel=dict(namelength=-1)
     ))
     
-    forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
     if not forecast_df_plot.empty:
-        last_hist_time = hist_df["Datetime"].iloc[-1]
-        last_hist_value = hist_df["Water_level"].iloc[-1]
+        # Titik H-1 untuk hover prediksi
+        h_minus_1_time = start_datetime - timedelta(hours=1)
+        try:
+            h_minus_1_value = final_df.loc[final_df["Datetime"]==h_minus_1_time, "Water_level"].values[0]
+        except IndexError:
+            h_minus_1_value = hist_df["Water_level"].iloc[-1]
     
-        forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
-        forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level"]])
+        forecast_plot_x = pd.concat([pd.Series([h_minus_1_time]), forecast_df_plot["Datetime"]])
+        forecast_plot_y = pd.concat([pd.Series([h_minus_1_value]), forecast_df_plot["Water_level"]])
     
+        # Forecast trace
         fig.add_trace(go.Scatter(
             x=forecast_plot_x,
             y=forecast_plot_y,
             mode="lines+markers",
             name="Forecast",
-            line=dict(color="orange"),
+            line=dict(color="orange", width=2, dash="dot"),
             marker=dict(size=4),
-            hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
+            hovertemplate="Datetime: %{x}<br>Predicted Water Level: %{y:.2f} m",
+            hoverlabel=dict(namelength=-1)
         ))
     
+        # RMSE shading
         rmse_y_upper = (forecast_plot_y + rmse_est)
         rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
         fig.add_trace(go.Scatter(
@@ -306,11 +316,10 @@ if st.session_state.get("forecast_done", False):
         yaxis_title="Water Level",
         title="Water Level Historical vs 7-Day Forecast",
         template="plotly_white",
-        hovermode="closest"
+        hovermode="closest"  # <-- ini yang diganti
     )
     
     st.plotly_chart(fig, use_container_width=True)
-
     # -----------------------------
     # Downloads
     # -----------------------------
