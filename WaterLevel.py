@@ -36,7 +36,7 @@ else:
 st.subheader("Select Start Date & Time for 7-Day Forecast")
 selected_date = st.date_input("Date", value=rounded_now.date(), max_value=rounded_now.date())
 hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
-selected_hour_str = st.selectbox("Hour", hour_options, index=len(hour_options)-1)
+selected_hour_str = st.selectbox("Time", hour_options, index=len(hour_options)-1)
 selected_hour = int(selected_hour_str.split(":")[0])
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
