@@ -193,8 +193,20 @@ if wl_hourly is not None:
         
         # Function to highlight forecast rows
         def highlight_blue(row):
-            return ['background-color: lightblue' if row["Source"] == "Forecast" else '' for _ in row]
+            color = "background-color: lightblue" if row["Source"] == "Forecast" else ""
+            return [color] * len(row)
         
-        # Apply highlight and display
-        styled_df = final_df[display_cols + ["Source"]].style.apply(highlight_blue, axis=1)
-        st.dataframe(styled_df)
+        # Apply rounding to 2 decimals on numeric columns
+        for col in final_df.select_dtypes(include=np.number).columns:
+            final_df[col] = final_df[col].round(2)
+        
+        # Apply highlight and formatting
+        styled_df = (
+            final_df.style
+            .apply(highlight_blue, axis=1)
+            .format(precision=2)  # display numbers with 2 decimals
+            .hide(axis="columns", subset=["Source"])  # hide the 'Source' column
+        )
+        
+        # Render styled dataframe with HTML (to keep color)
+        st.markdown(styled_df.to_html(escape=False), unsafe_allow_html=True)
