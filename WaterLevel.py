@@ -58,6 +58,13 @@ st.info(
 # -----------------------------
 st.subheader("Upload Water Level File")
 uploaded_file = st.file_uploader("Upload CSV File (AWLR Joloi Logs)", type=["csv"])
+
+# Gunakan session_state supaya file tidak hilang
+if uploaded_file is not None:
+    st.session_state["uploaded_file"] = uploaded_file
+else:
+    uploaded_file = st.session_state.get("uploaded_file", None)
+
 wl_hourly = None
 upload_success = False
 
