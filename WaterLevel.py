@@ -5,6 +5,7 @@ import joblib
 import numpy as np
 from datetime import datetime, timedelta, time
 from xgboost import XGBRegressor
+import time as t
 
 # -----------------------------
 # Load trained model
@@ -39,13 +40,21 @@ selected_hour_str = st.selectbox(
     index=len(hour_options)-1
 )
 selected_hour = int(selected_hour_str.split(":")[0])
-
-# Fix: pastikan selected_date adalah datetime.date
-if isinstance(selected_date, pd.Timestamp):
-    selected_date = selected_date.date()
-
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
+
+# -----------------------------
+# Instructions
+# -----------------------------
+st.subheader("Instructions for Uploading Water Level Data")
+st.info(
+    f"Please upload a CSV file containing hourly water level data.\n"
+    f"- The CSV must have columns: 'Datetime' and 'Level Air'.\n"
+    f"- 'Datetime' should be in proper datetime format (e.g., YYYY-MM-DD HH:MM:SS).\n"
+    f"- The data should cover **the last 24 hours before the selected start datetime** "
+    f"({start_datetime - timedelta(hours=24)} to {start_datetime}).\n"
+    f"- Make sure there are no missing hours in this period."
+)
 
 # -----------------------------
 # Upload water level data
@@ -73,15 +82,17 @@ if uploaded_file is not None:
                 missing_str = ', '.join([dt.strftime("%Y-%m-%d %H:%M") for dt in missing_hours])
                 st.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
             else:
+                upload_success = True
                 wl_hourly = (
                     df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
                     .rename(columns={"Level Air": "Water_level"})
                     .sort_values(by="Datetime", ascending=True)
                     .round(2)
                 )
-                st.success("Successfully uploaded 24-hour water level data before start time.", icon="✅")
+                success_msg = st.success("Successfully uploaded 24-hour water level data before start time.")
+                t.sleep(1)
+                success_msg.empty()
                 st.dataframe(wl_hourly)
-                upload_success = True
 
     except Exception as e:
         st.error(f"Failed to read file: {e}")
