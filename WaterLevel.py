@@ -4,6 +4,7 @@ import requests
 import joblib
 import numpy as np
 from datetime import datetime, timedelta, time
+from xgboost import XGBRegressor
 
 # -----------------------------
 # Load trained model
@@ -17,17 +18,29 @@ st.title("🌊 Water Level Forecast Dashboard")
 # -----------------------------
 now_utc = datetime.utcnow()
 gmt7_now = now_utc + timedelta(hours=7)
-rounded_now = (gmt7_now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0) \
-    if gmt7_now.minute > 0 or gmt7_now.second > 0 or gmt7_now.microsecond > 0 \
-    else gmt7_now.replace(minute=0, second=0, microsecond=0)
+if gmt7_now.minute > 0 or gmt7_now.second > 0 or gmt7_now.microsecond > 0:
+    rounded_now = (gmt7_now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+else:
+    rounded_now = gmt7_now.replace(minute=0, second=0, microsecond=0)
 
 # -----------------------------
 # Select forecast start datetime
 # -----------------------------
 st.subheader("Select Start Date & Time for 7-Day Forecast")
-selected_date = st.date_input("Date", value=rounded_now.date(), max_value=rounded_now.date())
+
+selected_date = st.date_input(
+    "Date",
+    value=rounded_now.date(),
+    max_value=rounded_now.date()
+)
+
 hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
-selected_hour_str = st.selectbox("Hour", hour_options, index=len(hour_options)-1)
+selected_hour_str = st.selectbox(
+    "Hour",
+    hour_options,
+    index=len(hour_options)-1
+)
+
 selected_hour = int(selected_hour_str.split(":")[0])
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
@@ -40,35 +53,47 @@ uploaded_file = st.file_uploader("Upload CSV File (AWLR Joloi Logs)", type=["csv
 wl_hourly = None
 
 if uploaded_file is not None:
-    df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
-    if "Datetime" in df_wl.columns and "Level Air" in df_wl.columns:
-        df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
-        start_limit = start_datetime - pd.Timedelta(hours=24)
-        df_wl_filtered = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
-        wl_hourly = (
-            df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
-            .rename(columns={"Level Air": "Water_level"})
-            .sort_values(by="Datetime", ascending=True)
-            .round(2)
-        )
-        st.success("Successfully uploaded 24-hour water level data before start time.")
-        st.dataframe(wl_hourly)
-    else:
-        st.error("The file must contain columns 'Datetime' and 'Level Air'.")
+    try:
+        df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
+        if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
+            st.error("The file must contain columns 'Datetime' and 'Level Air'.")
+        else:
+            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
+            start_limit = start_datetime - pd.Timedelta(hours=24)
+            df_wl_filtered = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
+
+            wl_hourly = (
+                df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
+                .rename(columns={"Level Air": "Water_level"})
+                .sort_values(by="Datetime", ascending=True)
+                .round(2)
+            )
+
+            st.success("Successfully uploaded 24-hour water level data before start time.")
+            st.dataframe(wl_hourly)
+    except Exception as e:
+        st.error(f"Failed to read file: {e}")
 
 # -----------------------------
-# Climate data fetch functions
+# Fetch climate data
 # -----------------------------
 def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
+    start_date = start_dt.date().isoformat()
+    end_date = end_dt.date().isoformat()
+
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={lat}&longitude={lon}"
-        f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
+        f"&start_date={start_date}&end_date={end_date}"
         f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain"
         f"&timezone=Asia%2FBangkok"
     )
+
     try:
-        data = requests.get(url, timeout=30).json()
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
             "Rainfall": data["hourly"]["rain"],
@@ -77,9 +102,12 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
             "Soil_temperature": data["hourly"]["soil_temperature_0_to_7cm"],
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"]
         })
+
         df["Datetime"] = df["Datetime"].dt.floor("H")
         return df
-    except:
+
+    except Exception as e:
+        st.error(f"Failed to fetch historical climate data: {e}")
         return pd.DataFrame()
 
 def fetch_climate_forecast(lat=-0.117, lon=114.1):
@@ -89,8 +117,12 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         f"&hourly=rain,surface_pressure,cloud_cover,soil_moisture_0_to_1cm,soil_temperature_0cm"
         f"&timezone=Asia%2FBangkok&forecast_days=14"
     )
+
     try:
-        data = requests.get(url, timeout=30).json()
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
             "Rainfall": data["hourly"]["rain"],
@@ -99,78 +131,61 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
             "Soil_temperature": data["hourly"]["soil_temperature_0cm"],
             "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"]
         })
+
         df["Datetime"] = df["Datetime"].dt.floor("H")
         return df
-    except:
+
+    except Exception as e:
+        st.error(f"Failed to fetch forecast climate data: {e}")
         return pd.DataFrame()
 
 # -----------------------------
-# Run Fetch + Forecast
+# Fetch, merge & run forecast
 # -----------------------------
 if wl_hourly is not None:
-    if st.button("Fetch Climate Data & Run 7-Day Forecast"):
+    if st.button("Run 7-Day Forecast"):
         with st.spinner("Fetching climate data and performing 7-day forecast..."):
             
-            # 1️⃣ Merge historical water level + climate
-            start_dt, end_dt = wl_hourly["Datetime"].min(), wl_hourly["Datetime"].max()
+            # --- Historical merge ---
+            start_dt = wl_hourly["Datetime"].min()
+            end_dt = wl_hourly["Datetime"].max()
             climate_hist = fetch_climate_historical(start_dt, end_dt)
             merged_df = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
-
-            # 2️⃣ Create forecast frame for next 7 days
-            forecast_hours = 168
-            forecast_dates = [start_datetime + timedelta(hours=i) for i in range(1, forecast_hours+1)]
-            forecast_df = pd.DataFrame({"Datetime": forecast_dates})
-            forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
-
-            # Fetch climate for forecast
-            if forecast_end < gmt7_now:
-                add_df = fetch_climate_historical(forecast_start, forecast_end)
-            elif forecast_start > gmt7_now:
-                add_df = fetch_climate_forecast()
-            else:
-                hist_df = fetch_climate_historical(forecast_start, gmt7_now)
-                fore_df = fetch_climate_forecast()
-                add_df = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
-
-            forecast_df = pd.merge(forecast_df, add_df, on="Datetime", how="left")
+            merged_df["Source"] = "Historical"
+            
+            # --- Prepare forecast dataframe ---
+            forecast_hours = [start_datetime + timedelta(hours=i) for i in range(1, 7*24+1)]
+            forecast_df = pd.DataFrame({"Datetime": forecast_hours})
+            
+            # Fetch climate for forecast period
+            forecast_climate = fetch_climate_forecast()
+            forecast_df = pd.merge(forecast_df, forecast_climate, on="Datetime", how="left")
             forecast_df["Water_level"] = np.nan
             forecast_df["Source"] = "Forecast"
-
-            merged_df["Source"] = "Historical"
+            
+            # --- Combine historical + forecast ---
             full_df = pd.concat([merged_df, forecast_df], ignore_index=True).sort_values("Datetime")
-
-            # 3️⃣ Define highlighted features for lag
-            highlighted_features = [
-                "Rainfall_Lag17","Rainfall_Lag18","Rainfall_Lag19","Rainfall_Lag20","Rainfall_Lag21","Rainfall_Lag22","Rainfall_Lag23","Rainfall_Lag24",
-                "Cloud_cover_Lag1","Cloud_cover_Lag2","Cloud_cover_Lag3","Cloud_cover_Lag4","Cloud_cover_Lag5","Cloud_cover_Lag6","Cloud_cover_Lag7",
-                "Surface_pressure_Lag1","Surface_pressure_Lag2","Surface_pressure_Lag3","Surface_pressure_Lag4","Surface_pressure_Lag5","Surface_pressure_Lag6",
-                "Soil_temperature_Lag9","Soil_temperature_Lag10","Soil_temperature_Lag11",
-                "Soil_moisture_Lag1","Soil_moisture_Lag2","Soil_moisture_Lag3","Soil_moisture_Lag4","Soil_moisture_Lag5","Soil_moisture_Lag6",
-                "Water_level_Lag1","Water_level_Lag2","Water_level_Lag3","Water_level_Lag4","Water_level_Lag5"
-            ]
-
-            # 4️⃣ Rolling forecast
-            df_pred = full_df.copy()
-            for i in range(len(df_pred)):
-                if df_pred.loc[i, "Source"] == "Forecast":
-                    current_dt = df_pred.loc[i, "Datetime"]
-                    lag_data = {}
-                    for feat in highlighted_features:
-                        base, lag_num = feat.rsplit("_Lag",1)
-                        lag_num = int(lag_num)
-                        lag_time = current_dt - timedelta(hours=lag_num)
-                        if base == "Water_level":
-                            val = df_pred.loc[df_pred["Datetime"]==lag_time, "Water_level"].values
-                        else:
-                            val = df_pred.loc[df_pred["Datetime"]==lag_time, base].values
-                        lag_data[feat] = val[0] if len(val)>0 else np.nan
-
-                    X_pred = pd.DataFrame([lag_data])[highlighted_features]
-                    df_pred.loc[i, "Water_level"] = model.predict(X_pred)[0] if not X_pred.isna().any().any() else np.nan
-
-            # 5️⃣ Display final DataFrame
+            
+            # --- Iterative prediction (per hour) ---
+            # Pastikan kolom lag sesuai model (misal kolom training XGB)
+            lag_cols = [c for c in model.get_booster().feature_names]  # fitur yang digunakan model
+            for idx in full_df[full_df["Source"]=="Forecast"].index:
+                X_pred = full_df.loc[idx-len(lag_cols):idx-1, lag_cols].values.reshape(1, -1)
+                try:
+                    full_df.at[idx, "Water_level"] = model.predict(X_pred)[0]
+                except Exception:
+                    full_df.at[idx, "Water_level"] = np.nan
+            
+            # --- Display with highlight and safe formatting ---
             st.subheader("Water Level + Climate Data with Forecast")
-            styled_df = df_pred.style.format("{:.2f}").apply(
-                lambda row: ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row], axis=1
-            )
+            
+            def format_number(x):
+                return "{:.2f}".format(x) if pd.notnull(x) else ""
+            
+            def highlight_forecast(row):
+                color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
+                return [color]*len(row)
+            
+            styled_df = full_df.style.apply(highlight_forecast, axis=1).format(format_number)
+            
             st.dataframe(styled_df, use_container_width=True, height=500)
