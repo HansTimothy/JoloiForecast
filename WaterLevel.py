@@ -246,15 +246,10 @@ if wl_hourly is not None:
                 color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
                 return [color] * len(row)
             
-            # Buat styler dengan rounding 2 angka di belakang koma
-            styled_df = (
-                full_df.style
-                .apply(highlight_forecast, axis=1)
-                .format("{:.2f}")  # <-- paksa semua numeric tampil 2 desimal
-            )
+            # Styler dengan 2 desimal dan highlight
+            styled_df = full_df.style.apply(highlight_forecast, axis=1).format("{:.2f}")
             
-            st.dataframe(
-                styled_df,
-                use_container_width=True,
-                height=500
-            )
+            # Tampilkan sebagai HTML
+            st.subheader("Water Level + Climate Data")
+            st.markdown(styled_df.to_html(escape=False), unsafe_allow_html=True)
+            
