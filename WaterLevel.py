@@ -112,18 +112,30 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         return pd.DataFrame()
 
 # -----------------------------
-# Helper function for lag values
+# Build lagged features
 # -----------------------------
-def get_lag_value(df, col, target_time, max_lookback):
-    """
-    Ambil nilai lag literal, jika tidak ada, ambil nilai terakhir yang tersedia hingga max_lookback jam.
-    """
-    for lag in range(1, max_lookback+1):
-        lag_time = target_time - timedelta(hours=lag)
-        val = df.loc[df["Datetime"] == lag_time, col]
-        if len(val) > 0:
-            return val.values[0]
-    return 0
+def build_lag_features(df, current_time):
+    lagged = {}
+    for col in ["Rainfall", "Cloud_cover", "Surface_pressure", "Soil_temperature", "Soil_moisture", "Water_level"]:
+        # tentukan lag range sesuai model
+        if col=="Rainfall":
+            lags = range(17,25)
+        elif col=="Cloud_cover":
+            lags = range(1,25)
+        elif col=="Surface_pressure":
+            lags = range(1,25)
+        elif col=="Soil_temperature":
+            lags = range(9,12)
+        elif col=="Soil_moisture":
+            lags = range(1,25)
+        elif col=="Water_level":
+            lags = range(1,25)
+        for lag in lags:
+            lag_time = current_time - timedelta(hours=lag)
+            val = df.loc[df["Datetime"]==lag_time, col]
+            # pakai 0 jika tidak ada
+            lagged[f"{col}_Lag{lag}"] = val.values[0] if not val.empty else 0
+    return lagged
 
 # -----------------------------
 # Fetch Data & Forecasting
@@ -164,37 +176,17 @@ if wl_hourly is not None:
             # -----------------------------
             # Predict water level 7x24 hourly
             # -----------------------------
-            lag_hours_rain = list(range(17, 25))
-            lag_hours_cloud = list(range(1, 25))
-            lag_hours_pressure = list(range(1, 25))
-            lag_hours_soiltemp = list(range(9, 12))
-            lag_hours_soilmoist = list(range(1, 25))
-            lag_hours_wl = list(range(1, 25))
-    
             for i in range(len(forecast_merged)):
                 row_time = forecast_merged.iloc[i]["Datetime"]
-                feature = {}
-
-                # Generate lag features
-                for lag in lag_hours_rain:
-                    feature[f"Rainfall_Lag{lag}"] = get_lag_value(full_df, "Rainfall", row_time, lag)
-                for lag in lag_hours_cloud:
-                    feature[f"Cloud_cover_Lag{lag}"] = get_lag_value(full_df, "Cloud_cover", row_time, lag)
-                for lag in lag_hours_pressure:
-                    feature[f"Surface_pressure_Lag{lag}"] = get_lag_value(full_df, "Surface_pressure", row_time, lag)
-                for lag in lag_hours_soiltemp:
-                    feature[f"Soil_temperature_Lag{lag}"] = get_lag_value(full_df, "Soil_temperature", row_time, lag)
-                for lag in lag_hours_soilmoist:
-                    feature[f"Soil_moisture_Lag{lag}"] = get_lag_value(full_df, "Soil_moisture", row_time, lag)
-                for lag in lag_hours_wl:
-                    feature[f"Water_level_Lag{lag}"] = get_lag_value(full_df, "Water_level", row_time, lag)
-
-                # Predict
+                feature = build_lag_features(full_df, row_time)
                 feature_df = pd.DataFrame([feature])
-                pred = model.predict(feature_df)[0]
-                forecast_merged.at[i, "Water_level"] = max(pred, 0)  # min 0
-
-            # Merge predictions ke full_df
+                # PAKSA urutan kolom sama seperti model
+                feature_df = feature_df[feature_cols]
+                # Predict dan minimal 0
+                pred = max(model.predict(feature_df)[0],0)
+                forecast_merged.at[i, "Water_level"] = pred
+    
+            # Merge predictions into full_df
             full_df.loc[full_df["Source"]=="Forecast","Water_level"] = forecast_merged["Water_level"].values
     
             # -----------------------------
