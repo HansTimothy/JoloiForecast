@@ -8,3 +8,4 @@ plotly
 pytz
 XlsxWriter
 openpyxl
+reportlab
