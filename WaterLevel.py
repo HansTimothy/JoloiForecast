@@ -97,11 +97,11 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
 
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
-            "Rainfall": data["hourly"]["rain"]
+            "Rainfall": data["hourly"]["rain"],
             "Cloud_cover": data["hourly"]["cloud_cover"],
             "Surface_pressure": data["hourly"]["surface_pressure"],
             "Soil_temperature": data["hourly"]["soil_temperature_0_to_7cm"],
-            "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"],
+            "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"]
             
         })
 
@@ -127,11 +127,11 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
 
         df = pd.DataFrame({
             "Datetime": pd.to_datetime(data["hourly"]["time"]),
-            "Rainfall": data["hourly"]["rain"]
+            "Rainfall": data["hourly"]["rain"],
             "Cloud_cover": data["hourly"]["cloud_cover"],
             "Surface_pressure": data["hourly"]["surface_pressure"],
             "Soil_temperature": data["hourly"]["soil_temperature_0cm"],
-            "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"],
+            "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"]
         })
 
         df["Datetime"] = df["Datetime"].dt.floor("H")
