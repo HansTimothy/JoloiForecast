@@ -5,17 +5,13 @@ import joblib
 import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime, timedelta, time
-from xgboost import XGBRegressor
 
 # -----------------------------
 # Load trained model
 # -----------------------------
 model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 
-# Ambil fitur yang dipakai saat training (sesuai CSV lagged)
-model_features = model.get_booster().feature_names  # asumsi sudah tersimpan di model
-
-st.title("🌊 Water Level Forecast Dashboard")
+st.title("🌊 Water Level 7-Day Forecast Dashboard")
 
 # -----------------------------
 # Current time (GMT+7), rounded up to next full hour
@@ -31,11 +27,7 @@ else:
 # Select forecast start datetime
 # -----------------------------
 st.subheader("Select Start Date & Time for 7-Day Forecast")
-selected_date = st.date_input(
-    "Date",
-    value=rounded_now.date(),
-    max_value=rounded_now.date()
-)
+selected_date = st.date_input("Date", value=rounded_now.date(), max_value=rounded_now.date())
 hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
 selected_hour_str = st.selectbox("Hour", hour_options, index=len(hour_options)-1)
 selected_hour = int(selected_hour_str.split(":")[0])
@@ -126,63 +118,73 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         return pd.DataFrame()
 
 # -----------------------------
-# Run 7-Day Forecast
+# Run 7-day forecast
 # -----------------------------
-if wl_hourly is not None:
-    if st.button("Run 7-Day Forecast"):
-        st.info("Fetching climate data...")
-        # Historical
-        start_dt = wl_hourly["Datetime"].min()
-        end_dt = wl_hourly["Datetime"].max()
-        climate_hist = fetch_climate_historical(start_dt, end_dt)
+if wl_hourly is not None and st.button("Run 7-Day Forecast"):
+    progress_container = st.empty()
 
-        merged_df = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
-        merged_df["Source"] = "Historical"
+    # 1️⃣ Merge historical water level + climate
+    start_dt = wl_hourly["Datetime"].min()
+    end_dt = wl_hourly["Datetime"].max()
+    climate_df = fetch_climate_historical(start_dt, end_dt)
+    merged_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left").sort_values("Datetime")
+    merged_df["Source"] = "Historical"
 
-        # Forecast
-        forecast_hours = [start_datetime + timedelta(hours=i) for i in range(168)]
-        forecast_df = pd.DataFrame({"Datetime": forecast_hours})
-        # Climate data forecast
-        hist_df = fetch_climate_historical(start_datetime, gmt7_now)
+    # 2️⃣ Prepare forecast dataframe (168h)
+    forecast_hours = [start_datetime + timedelta(hours=i) for i in range(0, 168)]
+    forecast_df = pd.DataFrame({"Datetime": forecast_hours})
+    forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
+    if forecast_end < gmt7_now:
+        add_df = fetch_climate_historical(forecast_start, forecast_end)
+    elif forecast_start > gmt7_now:
+        add_df = fetch_climate_forecast()
+    else:
+        hist_df = fetch_climate_historical(forecast_start, gmt7_now)
         fore_df = fetch_climate_forecast()
         add_df = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
-        forecast_merged = pd.merge(forecast_df, add_df, on="Datetime", how="left")
-        forecast_merged["Water_level"] = np.nan
-        forecast_merged["Source"] = "Forecast"
 
-        # Combine
-        final_df = pd.concat([merged_df, forecast_merged], ignore_index=True).sort_values("Datetime")
-        final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype,np.number) else x)
+    forecast_merged = pd.merge(forecast_df, add_df, on="Datetime", how="left")
+    forecast_merged["Water_level"] = np.nan
+    forecast_merged["Source"] = "Forecast"
 
-        st.info("Running iterative 7-day water level forecast...")
-        # --- Iterative Prediction with Progress Bar ---
-        forecast_indices = final_df[final_df["Source"]=="Forecast"].index
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        total_steps = len(forecast_indices)
+    final_df = pd.concat([merged_df, forecast_merged], ignore_index=True).sort_values("Datetime")
+    final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
 
-        for i, idx in enumerate(forecast_indices, start=1):
-            status_text.text(f"Predicting hour {i}/{total_steps}...")
-            X_pred = pd.DataFrame(columns=model_features, index=[0])
-            for f in model_features:
-                base, lag = f.rsplit("_Lag",1)
-                lag = int(lag)
-                try:
-                    X_pred.at[0,f] = final_df.loc[idx-lag, base]
-                except:
-                    X_pred.at[0,f] = final_df.loc[final_df["Source"]=="Historical", base].iloc[-lag]
-            X_pred = X_pred.astype(float)
-            y_hat = model.predict(X_pred)[0]
-            final_df.at[idx,"Water_level"] = round(y_hat,2)
-            progress_bar.progress(i / total_steps)
+    # 3️⃣ Iterative prediction
+    model_features = model.get_booster().feature_names
+    forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
+    total_steps = len(forecast_indices)
 
-        status_text.text("✅ 7-Day Forecast Completed!")
+    for i, idx in enumerate(forecast_indices, start=1):
+        progress_pct = (i / total_steps) * 100
+        progress_container.markdown(f"**Predicting hour {i}/{total_steps} ({progress_pct:.1f}%)...**")
+        progress_container.progress(i / total_steps)
 
-        # -----------------------------
-        # Display final table
-        # -----------------------------
-        st.subheader("Water Level + Climate Data (Historical + Forecast)")
-        def highlight_forecast(row):
-            return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
-        format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
-        st.dataframe(final_df.style.apply(highlight_forecast, axis=1).format(format_dict), use_container_width=True, height=400)
+        # Prepare input for model
+        X_pred = pd.DataFrame(columns=model_features, index=[0])
+        for f in model_features:
+            base, lag = f.rsplit("_Lag",1)
+            lag = int(lag)
+            try:
+                X_pred.at[0,f] = final_df.loc[idx-lag, base]
+            except:
+                X_pred.at[0,f] = final_df.loc[final_df["Source"]=="Historical", base].iloc[-lag]
+
+        X_pred = X_pred.astype(float)
+        y_hat = model.predict(X_pred)[0]
+        if y_hat < 0:  # rule: no negative water level
+            y_hat = 0.0
+
+        final_df.at[idx, "Water_level"] = round(y_hat,2)
+
+    progress_container.markdown("✅ **7-Day Forecast Completed!**")
+    progress_container.progress(1.0)
+
+    # 4️⃣ Display final dataframe
+    st.subheader("Water Level + Climate Data with Forecast")
+    def highlight_forecast(row):
+        color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
+        return [color]*len(row)
+    format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
+    styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
+    st.dataframe(styled_df, use_container_width=True, height=500)
