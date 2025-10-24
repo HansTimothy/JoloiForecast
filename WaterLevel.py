@@ -197,4 +197,4 @@ if wl_hourly is not None:
         
         # Apply highlight and display
         styled_df = final_df[display_cols + ["Source"]].style.apply(highlight_blue, axis=1)
-        st.dataframe(styled_df.hide(columns=["Source"]))
+        st.dataframe(styled_df)
