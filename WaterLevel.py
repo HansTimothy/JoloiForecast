@@ -276,7 +276,7 @@ if st.session_state.get("forecast_done", False):
         yaxis_title="Water Level",
         title="Water Level Historical vs 7-Day Forecast",
         template="plotly_white",
-        hovermode="x unified"
+        hovermode="closest"
     )
     
     st.plotly_chart(fig, use_container_width=True)
