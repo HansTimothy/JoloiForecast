@@ -119,18 +119,16 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
         return pd.DataFrame()
 
 # -----------------------------
-# Forecast button
+# Run 7-day iterative forecast
 # -----------------------------
 if wl_hourly is not None:
     if st.button("Run 7-Day Water Level Forecast"):
         with st.spinner("Fetching climate data and performing 7-day forecast..."):
             # --- Merge historical water level with climate data ---
-            start_dt = wl_hourly["Datetime"].min()
-            end_dt = wl_hourly["Datetime"].max()
-            climate_hist = fetch_climate_historical(start_dt, end_dt)
+            climate_hist = fetch_climate_historical(wl_hourly["Datetime"].min(), wl_hourly["Datetime"].max())
             merged_df = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
 
-            # --- Prepare forecast dataframe ---
+            # --- Prepare forecast dataframe for next 7 days ---
             next_hours = [start_datetime + timedelta(hours=i) for i in range(1, 7*24+1)]
             forecast_df = pd.DataFrame({"Datetime": next_hours})
             forecast_climate = fetch_climate_forecast()
@@ -141,24 +139,18 @@ if wl_hourly is not None:
             merged_df["Source"] = "Historical"
             full_df = pd.concat([merged_df, forecast_df], ignore_index=True).sort_values("Datetime").reset_index(drop=True)
 
-            # --- Generate lag features ---
-            lag_hours = list(range(1,25))  # adjust sesuai model training
-            for lag in lag_hours:
-                full_df[f"Water_level_Lag{lag}"] = full_df["Water_level"].shift(lag)
-
-            # --- List of lag feature columns for model ---
-            lag_cols = [f"Water_level_Lag{lag}" for lag in lag_hours]
-
-            # --- Iterative forecast per hour ---
-            forecast_idx = full_df[full_df["Source"]=="Forecast"].index
-            for idx in forecast_idx:
-                if idx < max(lag_hours):
-                    continue  # skip if not enough lag data
-                X_pred = full_df.loc[idx-len(lag_cols):idx-1, lag_cols].values.reshape(1, -1)
+            # --- Iterative forecast per hour using last 24h (historical + forecasted) ---
+            lag_hours = 24
+            for i in range(len(full_df)):
+                if full_df.at[i, "Source"] != "Forecast":
+                    continue  # skip historical
+                if i < lag_hours:
+                    continue  # skip if not enough history
+                last_24h = full_df.loc[i-lag_hours:i-1, "Water_level"].values.reshape(1, -1)
                 try:
-                    full_df.at[idx, "Water_level"] = model.predict(X_pred)[0]
+                    full_df.at[i, "Water_level"] = model.predict(last_24h)[0]
                 except:
-                    full_df.at[idx, "Water_level"] = np.nan
+                    full_df.at[i, "Water_level"] = np.nan
 
             # --- Round numeric columns ---
             full_df = full_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
