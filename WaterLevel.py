@@ -189,21 +189,24 @@ if wl_hourly is not None:
         # -----------------------------
         st.subheader("Water Level + Climate Data")
         
-        # Round numeric columns to 2 decimals
+        # Ensure numeric columns are rounded and formatted to 2 decimals visually
         for col in final_df.select_dtypes(include=np.number).columns:
             final_df[col] = final_df[col].round(2)
         
-        # Create highlight for Forecast rows
+        # Function for highlighting forecast rows
         def highlight_forecast(row):
             color = 'background-color: #cfe9ff' if row['Source'] == 'Forecast' else ''
             return [color] * len(row)
         
-        # Use Streamlit dataframe (scrollable & auto-fit)
-        styled_df = final_df.style.apply(highlight_forecast, axis=1)
+        # Format all numeric columns to 2 decimal places in the style
+        format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
         
-        # Display nicely sized dataframe
+        # Apply highlight + format
+        styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
+        
+        # Display with auto-fit size
         st.dataframe(
             styled_df,
             use_container_width=True,
-            height=400  # adjust height if needed (e.g. 500 for longer tables)
+            height=400  # adjust as needed
         )
