@@ -222,16 +222,13 @@ if upload_success and run_forecast:
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
-    # -----------------------------
-    # Apply smoothing only for forecast data (keep historical raw)
-    # -----------------------------
+    # Apply smoothing only for forecast data (historical stays raw)
     final_df["Water_level_smooth"] = final_df["Water_level"]
-    forecast_mask = final_df["Source"] == "Forecast"
     
-    if forecast_mask.any():
-        final_df.loc[forecast_mask, "Water_level_smooth"] = smooth_savgol(
-            final_df.loc[forecast_mask, "Water_level"], window=7, poly=2
-        )
+    forecast_mask = final_df["Source"] == "Forecast"
+    final_df.loc[forecast_mask, "Water_level_smooth"] = smooth_savgol(
+        final_df.loc[forecast_mask, "Water_level"], window=7, poly=2
+    )
 
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
@@ -260,17 +257,14 @@ if st.session_state.get("forecast_done", False):
     hist_df = final_df[final_df["Source"]=="Historical"]
     forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
 
+    # Forecast (smoothed)
     if not forecast_df_plot.empty:
-        # Hubungkan titik terakhir historical dengan awal forecast
-        if not hist_df.empty:
-            last_hist_row = hist_df.iloc[[-1]]
-            connected_forecast = pd.concat([last_hist_row, forecast_df_plot])
-        else:
-            connected_forecast = forecast_df_plot.copy()
+        last_hist_time = hist_df["Datetime"].iloc[-1]
+        last_hist_value = hist_df["Water_level"].iloc[-1]  # ambil nilai asli terakhir
     
-        forecast_plot_x = connected_forecast["Datetime"]
-        forecast_plot_y = connected_forecast["Water_level_smooth"]
-
+        forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
+        forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level_smooth"]])
+    
         fig.add_trace(go.Scatter(
             x=forecast_plot_x,
             y=forecast_plot_y,
@@ -294,11 +288,12 @@ if st.session_state.get("forecast_done", False):
             name=f"RMSE ±{rmse_est}"
         ))
 
+    # Historical (raw)
     fig.add_trace(go.Scatter(
         x=hist_df["Datetime"],
-        y=hist_df["Water_level"],
+        y=hist_df["Water_level"],  # gunakan data asli
         mode="lines+markers",
-        name="Historical",
+        name="Historical (Raw)",
         line=dict(color="blue"),
         marker=dict(size=4),
         hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
