@@ -12,6 +12,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import plotly.graph_objects as go
+from scipy.signal import savgol_filter
 
 # -----------------------------
 # Load trained model
@@ -140,6 +141,17 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
     return df
 
 # -----------------------------
+# Smoothing Function (Savitzky–Golay)
+# -----------------------------
+def smooth_savgol(series, window=7, poly=2):
+    series = pd.Series(series).interpolate().bfill().ffill()
+    n = len(series)
+    if n < 3:
+        return series
+    window = min(window, n if n % 2 == 1 else n - 1)
+    return pd.Series(savgol_filter(series, window_length=window, polyorder=poly))
+
+# -----------------------------
 # Run 7-Day Forecast
 # -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
@@ -210,6 +222,9 @@ if upload_success and run_forecast:
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
+    # Apply smoothing
+    final_df["Water_level_smooth"] = smooth_savgol(final_df["Water_level"], window=7, poly=2)
+
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
 
@@ -219,7 +234,7 @@ if upload_success and run_forecast:
 if st.session_state.get("forecast_done", False):
     final_df = st.session_state["final_df"]
 
-    st.subheader("Water Level + Climate Data with Forecast")
+    st.subheader("Water Level + Climate Data with Forecast (Smoothed)")
     def highlight_forecast(row):
         color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
         return [color]*len(row)
@@ -230,35 +245,30 @@ if st.session_state.get("forecast_done", False):
     # -----------------------------
     # Plot
     # -----------------------------
-    st.subheader("Water Level Forecast Plot")
+    st.subheader("Water Level Forecast Plot (Smoothed)")
     rmse_est = 0.06
     fig = go.Figure()
     
-    # 1️⃣ Historical line
     hist_df = final_df[final_df["Source"]=="Historical"]
-    
-    # 2️⃣ Forecast line (tersambung dengan titik Historical terakhir)
     forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
+
     if not forecast_df_plot.empty:
-        # Ambil titik terakhir Historical
         last_hist_time = hist_df["Datetime"].iloc[-1]
-        last_hist_value = hist_df["Water_level"].iloc[-1]
+        last_hist_value = hist_df["Water_level_smooth"].iloc[-1]
     
-        # Gabungkan dengan Forecast
         forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
-        forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level"]])
+        forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level_smooth"]])
     
         fig.add_trace(go.Scatter(
             x=forecast_plot_x,
             y=forecast_plot_y,
             mode="lines+markers",
-            name="Forecast",
+            name="Forecast (Smoothed)",
             line=dict(color="orange"),
             marker=dict(size=4),
             hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
         ))
     
-        # 3️⃣ RMSE area
         rmse_y_upper = (forecast_plot_y + rmse_est)
         rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
         fig.add_trace(go.Scatter(
@@ -274,9 +284,9 @@ if st.session_state.get("forecast_done", False):
 
     fig.add_trace(go.Scatter(
         x=hist_df["Datetime"],
-        y=hist_df["Water_level"],
+        y=hist_df["Water_level_smooth"],
         mode="lines+markers",
-        name="Historical",
+        name="Historical (Smoothed)",
         line=dict(color="blue"),
         marker=dict(size=4),
         hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
@@ -284,8 +294,8 @@ if st.session_state.get("forecast_done", False):
     
     fig.update_layout(
         xaxis_title="Datetime",
-        yaxis_title="Water Level",
-        title="Water Level Historical vs 7-Day Forecast",
+        yaxis_title="Water Level (m)",
+        title="Water Level Historical vs 7-Day Forecast (Smoothed)",
         template="plotly_white",
         hovermode="closest"
     )
@@ -295,8 +305,9 @@ if st.session_state.get("forecast_done", False):
     # -----------------------------
     # Downloads
     # -----------------------------
-    export_df = final_df[["Datetime", "Water_level"]].copy()
+    export_df = final_df[["Datetime", "Water_level", "Water_level_smooth"]].copy()
     export_df["Water_level"] = export_df["Water_level"].round(2)
+    export_df["Water_level_smooth"] = export_df["Water_level_smooth"].round(2)
     export_df["Datetime"] = export_df["Datetime"].astype(str)
 
     csv_buffer = export_df.to_csv(index=False).encode('utf-8')
@@ -320,7 +331,7 @@ if st.session_state.get("forecast_done", False):
         ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
         ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
     ]))
-    elements = [Paragraph("Joloi Water Level Forecast", styles["Title"]), table]
+    elements = [Paragraph("Joloi Water Level Forecast (Smoothed)", styles["Title"]), table]
     doc.build(elements)
 
     col1, col2, col3 = st.columns(3)
