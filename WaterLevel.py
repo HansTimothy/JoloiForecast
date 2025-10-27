@@ -97,7 +97,7 @@ if uploaded_file is not None:
 # -----------------------------
 # Fetch climate functions
 # -----------------------------
-def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
+def fetch_climate_historical(start_dt, end_dt, lat=-0.1054, lon=114.2011):
     start_date = start_dt.date().isoformat()
     end_date = end_dt.date().isoformat()
     url = (
@@ -120,7 +120,7 @@ def fetch_climate_historical(start_dt, end_dt, lat=-0.117, lon=114.1):
     df["Datetime"] = df["Datetime"].dt.floor("H")
     return df
 
-def fetch_climate_forecast(lat=-0.117, lon=114.1):
+def fetch_climate_forecast(lat=-0.1054, lon=114.2011):
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}"
