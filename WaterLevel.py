@@ -268,7 +268,7 @@ if st.session_state.get("forecast_done", False):
             y=forecast_plot_y,
             mode="lines+markers",
             name="Forecast (Smoothed)",
-            line=dict(color="orange"),
+            line=dict(color="orange", width=2),
             marker=dict(size=4),
             hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
         ))
@@ -291,7 +291,7 @@ if st.session_state.get("forecast_done", False):
         y=hist_df["Water_level_smooth"],
         mode="lines+markers",
         name="Historical",
-        line=dict(color="blue"),
+        line=dict(color="blue", width=2),
         marker=dict(size=4),
         hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
     ))
