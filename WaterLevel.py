@@ -290,7 +290,7 @@ if st.session_state.get("forecast_done", False):
         x=hist_df["Datetime"],
         y=hist_df["Water_level_smooth"],
         mode="lines+markers",
-        name="Historical (Smoothed)",
+        name="Historical",
         line=dict(color="blue"),
         marker=dict(size=4),
         hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
