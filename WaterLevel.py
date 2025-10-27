@@ -141,7 +141,7 @@ def fetch_climate_forecast(lat=-0.117, lon=114.1):
     return df
 
 # -----------------------------
-# Smoothing Function (Savitzky–Golay)
+# Smoothing Functions
 # -----------------------------
 def smooth_savgol(series, window=7, poly=2):
     series = pd.Series(series).interpolate().bfill().ffill()
@@ -150,6 +150,21 @@ def smooth_savgol(series, window=7, poly=2):
         return series
     window = min(window, n if n % 2 == 1 else n - 1)
     return pd.Series(savgol_filter(series, window_length=window, polyorder=poly))
+
+def smooth_forecast_only(df, window=7, poly=2):
+    hist_df = df[df["Source"] == "Historical"]
+    forecast_df = df[df["Source"] == "Forecast"]
+
+    if len(forecast_df) > 0:
+        # ambil beberapa titik terakhir dari historical untuk kontinuitas
+        tail_hist = hist_df.tail(window)
+        combined = pd.concat([tail_hist, forecast_df])
+        smoothed = smooth_savgol(combined["Water_level"].values, window, poly)
+        forecast_df["Water_level_smooth"] = smoothed[-len(forecast_df):]
+        df.loc[forecast_df.index, "Water_level_smooth"] = forecast_df["Water_level_smooth"]
+    else:
+        df["Water_level_smooth"] = df["Water_level"]
+    return df
 
 # -----------------------------
 # Run 7-Day Forecast
@@ -161,14 +176,11 @@ if "forecast_done" not in st.session_state:
 
 if upload_success and run_forecast:
     st.session_state["forecast_done"] = False
-
     progress_container = st.empty()
     progress_bar = st.progress(0)
-    
     total_steps = 3 + 168
     step_counter = 0
 
-    # 1️⃣ Fetch climate data
     progress_container.markdown("Fetching climate data...")
     start_dt = wl_hourly["Datetime"].min()
     end_dt = wl_hourly["Datetime"].max()
@@ -183,7 +195,6 @@ if upload_success and run_forecast:
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
-    # 2️⃣ Merge data
     progress_container.markdown("Merging water level and climate data...")
     merged_df = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
     merged_df["Source"] = "Historical"
@@ -195,11 +206,10 @@ if upload_success and run_forecast:
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
-    # 3️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level for 7 days...")
     model_features = model.get_booster().feature_names
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
-    
+
     for i, idx in enumerate(forecast_indices, start=1):
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
@@ -222,10 +232,9 @@ if upload_success and run_forecast:
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
-    # Apply smoothing only for forecast section
+    # Smoothing forecast only (keep historical original)
     final_df["Water_level_smooth"] = final_df["Water_level"]
-    mask_forecast = final_df["Source"] == "Forecast"
-    final_df.loc[mask_forecast, "Water_level_smooth"] = smooth_savgol(final_df.loc[mask_forecast, "Water_level"], window=7, poly=2)
+    final_df = smooth_forecast_only(final_df, window=7, poly=2)
 
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
@@ -235,8 +244,8 @@ if upload_success and run_forecast:
 # -----------------------------
 if st.session_state.get("forecast_done", False):
     final_df = st.session_state["final_df"]
-
     st.subheader("Water Level + Climate Data with Forecast (Smoothed)")
+
     def highlight_forecast(row):
         color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
         return [color]*len(row)
@@ -250,31 +259,38 @@ if st.session_state.get("forecast_done", False):
     st.subheader("Water Level Forecast Plot (Smoothed)")
     rmse_est = 0.06
     fig = go.Figure()
-    
+
     hist_df = final_df[final_df["Source"]=="Historical"]
     forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
-    
+
+    # Garis historical (original)
+    fig.add_trace(go.Scatter(
+        x=hist_df["Datetime"],
+        y=hist_df["Water_level"],
+        mode="lines+markers",
+        name="Historical (Original)",
+        line=dict(color="blue"),
+        marker=dict(size=4),
+        hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
+    ))
+
+    # Garis forecast (smoothed)
     if not forecast_df_plot.empty:
-        last_hist_time = hist_df["Datetime"].iloc[-1]
-        last_hist_value = hist_df["Water_level"].iloc[-1]
-    
-        forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
-        forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level_smooth"]])
-    
         fig.add_trace(go.Scatter(
-            x=forecast_plot_x,
-            y=forecast_plot_y,
+            x=forecast_df_plot["Datetime"],
+            y=forecast_df_plot["Water_level_smooth"],
             mode="lines+markers",
             name="Forecast (Smoothed)",
             line=dict(color="orange"),
             marker=dict(size=4),
             hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
         ))
-    
-        rmse_y_upper = (forecast_plot_y + rmse_est)
-        rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
+
+        # RMSE band
+        rmse_y_upper = forecast_df_plot["Water_level_smooth"] + rmse_est
+        rmse_y_lower = (forecast_df_plot["Water_level_smooth"] - rmse_est).clip(0)
         fig.add_trace(go.Scatter(
-            x=pd.concat([forecast_plot_x, forecast_plot_x[::-1]]),
+            x=pd.concat([forecast_df_plot["Datetime"], forecast_df_plot["Datetime"][::-1]]),
             y=pd.concat([rmse_y_upper, rmse_y_lower[::-1]]),
             fill='toself',
             fillcolor='rgba(255,165,0,0.2)',
@@ -284,16 +300,6 @@ if st.session_state.get("forecast_done", False):
             name=f"RMSE ±{rmse_est}"
         ))
 
-    fig.add_trace(go.Scatter(
-        x=hist_df["Datetime"],
-        y=hist_df["Water_level_smooth"],
-        mode="lines+markers",
-        name="Historical",
-        line=dict(color="blue"),
-        marker=dict(size=4),
-        hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
-    ))
-    
     fig.update_layout(
         xaxis_title="Datetime",
         yaxis_title="Water Level (m)",
@@ -301,7 +307,7 @@ if st.session_state.get("forecast_done", False):
         template="plotly_white",
         hovermode="closest"
     )
-    
+
     st.plotly_chart(fig, use_container_width=True)
 
     # -----------------------------
