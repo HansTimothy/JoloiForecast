@@ -226,11 +226,12 @@ if upload_success and run_forecast:
     # Apply smoothing only for forecast data (keep historical raw)
     # -----------------------------
     final_df["Water_level_smooth"] = final_df["Water_level"]
-    
     forecast_mask = final_df["Source"] == "Forecast"
-    final_df.loc[forecast_mask, "Water_level_smooth"] = smooth_savgol(
-        final_df.loc[forecast_mask, "Water_level"], window=7, poly=2
-    )
+    
+    if forecast_mask.any():
+        final_df.loc[forecast_mask, "Water_level_smooth"] = smooth_savgol(
+            final_df.loc[forecast_mask, "Water_level"], window=7, poly=2
+        )
 
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
@@ -260,12 +261,16 @@ if st.session_state.get("forecast_done", False):
     forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
 
     if not forecast_df_plot.empty:
-        last_hist_time = hist_df["Datetime"].iloc[-1]
-        last_hist_value = hist_df["Water_level_smooth"].iloc[-1]
+        # Hubungkan titik terakhir historical dengan awal forecast
+        if not hist_df.empty:
+            last_hist_row = hist_df.iloc[[-1]]
+            connected_forecast = pd.concat([last_hist_row, forecast_df_plot])
+        else:
+            connected_forecast = forecast_df_plot.copy()
     
-        forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
-        forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level_smooth"]])
-    
+        forecast_plot_x = connected_forecast["Datetime"]
+        forecast_plot_y = connected_forecast["Water_level_smooth"]
+
         fig.add_trace(go.Scatter(
             x=forecast_plot_x,
             y=forecast_plot_y,
