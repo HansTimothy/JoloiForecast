@@ -223,13 +223,12 @@ if upload_success and run_forecast:
     progress_bar.progress(1.0)
 
     # Apply smoothing
-    final_df["Water_level"] = smooth_savgol(final_df["Water_level"], window=7, poly=2)
-    
+    final_df["Water_level_smooth"] = smooth_savgol(final_df["Water_level"], window=7, poly=2)
+
     # Restore original historical values (so only forecast is smoothed)
     historical_mask = final_df["Source"] == "Historical"
-    final_df.loc[historical_mask, "Water_level"] = final_df.loc[historical_mask, "Water_level"]
+    final_df.loc[historical_mask, "Water_level_smooth"] = final_df.loc[historical_mask, "Water_level"]
     
-    # Sekarang kolom Water_level sudah final, tidak perlu kolom Water_level_smooth
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
 
@@ -310,8 +309,9 @@ if st.session_state.get("forecast_done", False):
     # -----------------------------
     # Downloads
     # -----------------------------
-    export_df = final_df[["Datetime", "Water_level"]].copy()
+    export_df = final_df[["Datetime", "Water_level", "Water_level_smooth"]].copy()
     export_df["Water_level"] = export_df["Water_level"].round(2)
+    export_df["Water_level_smooth"] = export_df["Water_level_smooth"].round(2)
     export_df["Datetime"] = export_df["Datetime"].astype(str)
 
     csv_buffer = export_df.to_csv(index=False).encode('utf-8')
