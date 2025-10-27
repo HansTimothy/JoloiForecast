@@ -225,6 +225,10 @@ if upload_success and run_forecast:
     # Apply smoothing
     final_df["Water_level_smooth"] = smooth_savgol(final_df["Water_level"], window=7, poly=2)
 
+    # Restore original historical values (so only forecast is smoothed)
+    historical_mask = final_df["Source"] == "Historical"
+    final_df.loc[historical_mask, "Water_level_smooth"] = final_df.loc[historical_mask, "Water_level"]
+    
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
 
