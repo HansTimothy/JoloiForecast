@@ -222,8 +222,15 @@ if upload_success and run_forecast:
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
-    # Apply smoothing
-    final_df["Water_level_smooth"] = smooth_savgol(final_df["Water_level"], window=7, poly=2)
+    # -----------------------------
+    # Apply smoothing only for forecast data (keep historical raw)
+    # -----------------------------
+    final_df["Water_level_smooth"] = final_df["Water_level"]
+    
+    forecast_mask = final_df["Source"] == "Forecast"
+    final_df.loc[forecast_mask, "Water_level_smooth"] = smooth_savgol(
+        final_df.loc[forecast_mask, "Water_level"], window=7, poly=2
+    )
 
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
@@ -284,9 +291,9 @@ if st.session_state.get("forecast_done", False):
 
     fig.add_trace(go.Scatter(
         x=hist_df["Datetime"],
-        y=hist_df["Water_level_smooth"],
+        y=hist_df["Water_level"],
         mode="lines+markers",
-        name="Historical (Smoothed)",
+        name="Historical",
         line=dict(color="blue"),
         marker=dict(size=4),
         hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
