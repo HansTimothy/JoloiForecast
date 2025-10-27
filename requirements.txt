@@ -9,3 +9,4 @@ pytz
 XlsxWriter
 openpyxl
 reportlab
+scipy
