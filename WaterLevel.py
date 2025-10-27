@@ -156,11 +156,17 @@ def smooth_savgol(series, window=7, poly=2):
 # -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
 
+# Inisialisasi session_state jika belum ada
 if "forecast_done" not in st.session_state:
     st.session_state["forecast_done"] = False
+if "final_df" not in st.session_state:
+    st.session_state["final_df"] = None
 
+# Jika tombol ditekan dan data upload valid
 if upload_success and run_forecast:
+    # 🔹 Reset state supaya tabel preview dan plot lama hilang
     st.session_state["forecast_done"] = False
+    st.session_state["final_df"] = None
 
     progress_container = st.empty()
     progress_bar = st.progress(0)
@@ -224,13 +230,19 @@ if upload_success and run_forecast:
 
     # Apply smoothing
     final_df["Water_level_smooth"] = smooth_savgol(final_df["Water_level"], window=7, poly=2)
-
-    # Restore original historical values (so only forecast is smoothed)
     historical_mask = final_df["Source"] == "Historical"
     final_df.loc[historical_mask, "Water_level_smooth"] = final_df.loc[historical_mask, "Water_level"]
-    
+
+    # Simpan ke session_state
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
+
+# -----------------------------
+# Tampilkan tabel preview **hanya jika forecast belum dimulai**
+# -----------------------------
+if upload_success and not st.session_state.get("forecast_done", False):
+    st.subheader("Uploaded Water Level Data")
+    st.dataframe(wl_hourly)
 
 # -----------------------------
 # Display Forecast Results
