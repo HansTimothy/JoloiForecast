@@ -15,14 +15,47 @@ import plotly.graph_objects as go
 from scipy.signal import savgol_filter
 
 # -----------------------------
-# Load trained model
+# Helper: reset dashboard state (keadaan bersih)
 # -----------------------------
-model = joblib.load("xgb_waterlevel_hourly_model.pkl")
+def reset_dashboard_state(keep_uploaded=False):
+    """Reset state so preview/results are cleared.
+    If keep_uploaded True -> keep uploaded file in state (but clear results).
+    """
+    if not keep_uploaded:
+        st.session_state.pop("uploaded_file_name", None)
+        st.session_state.pop("wl_hourly", None)
+        st.session_state.pop("upload_success", None)
+    st.session_state["final_df"] = None
+    st.session_state["forecast_done"] = False
+    st.session_state["forecast_running"] = False
 
+# -----------------------------
+# Init session state keys (early)
+# -----------------------------
+if "forecast_done" not in st.session_state:
+    st.session_state["forecast_done"] = False
+if "forecast_running" not in st.session_state:
+    st.session_state["forecast_running"] = False
+if "final_df" not in st.session_state:
+    st.session_state["final_df"] = None
+if "uploaded_file_name" not in st.session_state:
+    st.session_state["uploaded_file_name"] = None
+if "wl_hourly" not in st.session_state:
+    st.session_state["wl_hourly"] = None
+if "upload_success" not in st.session_state:
+    st.session_state["upload_success"] = False
+if "last_date" not in st.session_state:
+    st.session_state["last_date"] = None
+if "last_hour" not in st.session_state:
+    st.session_state["last_hour"] = None
+
+# -----------------------------
+# Title
+# -----------------------------
 st.title("🌊 Water Level Forecast Dashboard")
 
 # -----------------------------
-# Current time (GMT+7), rounded up to next full hour
+# Current time (GMT+7)
 # -----------------------------
 now_utc = datetime.utcnow()
 gmt7_now = now_utc + timedelta(hours=7)
@@ -32,7 +65,7 @@ else:
     rounded_now = gmt7_now.replace(minute=0, second=0, microsecond=0)
 
 # -----------------------------
-# Select forecast start datetime
+# Select start datetime (date + hour)
 # -----------------------------
 st.subheader("Select Start Date & Time for 7-Day Forecast")
 
@@ -40,11 +73,9 @@ selected_date = st.date_input(
     "Date",
     value=rounded_now.date(),
     max_value=rounded_now.date(),
-    key="forecast_date_input"  # ✅ tambahkan key unik
+    key="forecast_date_input"
 )
 
-# ✅ Jika user memilih tanggal hari ini → jam sampai jam saat ini
-# ✅ Jika tanggal sebelum hari ini → jam penuh 00:00–23:00
 if selected_date == rounded_now.date():
     hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)]
 else:
@@ -54,12 +85,25 @@ selected_hour_str = st.selectbox(
     "Time (WIB)",
     hour_options,
     index=len(hour_options) - 1,
-    key="forecast_time_select"  # ✅ tambahkan key unik juga
+    key="forecast_time_select"
 )
 
 selected_hour = int(selected_hour_str.split(":")[0])
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
+
+# If date/hour changed -> clear preview and results
+if (st.session_state.get("last_date") is None) or (st.session_state.get("last_hour") is None):
+    st.session_state["last_date"] = selected_date
+    st.session_state["last_hour"] = selected_hour
+else:
+    if (st.session_state["last_date"] != selected_date) or (st.session_state["last_hour"] != selected_hour):
+        # user changed date/hour -> wipe uploaded preview + results
+        reset_dashboard_state(keep_uploaded=False)
+        st.session_state["last_date"] = selected_date
+        st.session_state["last_hour"] = selected_hour
+        # Immediately rerun so UI clears (prevents ghosting)
+        st.experimental_rerun()
 
 # -----------------------------
 # Instructions
@@ -69,153 +113,141 @@ st.info(
     f"Please upload a CSV file containing hourly water level data.\n"
     f"- The CSV must have columns: 'Datetime' and 'Level Air'.\n"
     f"- 'Datetime' should be in proper datetime format (e.g., YYYY-MM-DD HH:MM:SS).\n"
-    f"- The data should cover **the last 24 hours before the selected start datetime** "
+    f"- The data should cover the last 24 hours before the selected start datetime "
     f"({start_datetime - timedelta(hours=24)} to {start_datetime}).\n"
     f"- Make sure there are no missing hours in this period."
 )
 
 # -----------------------------
-# Upload water level data
+# Placeholders (so we can clear preview/result on demand)
 # -----------------------------
-st.subheader("Upload Hourly Water Level File")
-uploaded_file = st.file_uploader("Upload CSV File (AWLR Joloi Logs)", type=["csv"])
-wl_hourly = None
-upload_success = False
+preview_container = st.container()   # shows uploaded preview + Run button area
+controls_col = None                  # used below to place Run button inline if needed
+result_container = st.container()    # will hold forecast results (table + plot + downloads)
 
-if uploaded_file is not None:
-    try:
-        df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
-        if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
-            st.error("The file must contain columns 'Datetime' and 'Level Air'.")
-        else:
-            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
-            start_limit = start_datetime - pd.Timedelta(hours=24)
-            df_wl_filtered = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
+# -----------------------------
+# Upload file
+# -----------------------------
+with preview_container:
+    st.subheader("Upload Hourly Water Level File")
+    uploaded_file = st.file_uploader("Upload CSV File (AWLR Joloi Logs)", type=["csv"], key="uploader")
 
-            # Check 24-hour completeness
-            expected_hours = pd.date_range(start=start_limit, end=start_datetime - pd.Timedelta(hours=1), freq='H')
-            actual_hours = pd.to_datetime(df_wl_filtered["Datetime"].sort_values().unique())
-            missing_hours = sorted(set(expected_hours) - set(actual_hours))
-            if missing_hours:
-                missing_str = ', '.join([dt.strftime("%Y-%m-%d %H:%M") for dt in missing_hours])
-                st.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
+    # If user replaced file (new name) -> reset states and re-read
+    if uploaded_file is not None:
+        if st.session_state.get("uploaded_file_name") != uploaded_file.name:
+            # new upload: clear old results but keep this upload
+            reset_dashboard_state(keep_uploaded=True)
+            st.session_state["uploaded_file_name"] = uploaded_file.name
+
+        # Try read and validate; store wl_hourly in session_state
+        try:
+            df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
+            if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
+                st.error("The file must contain columns 'Datetime' and 'Level Air'.")
+                st.session_state["upload_success"] = False
+                st.session_state["wl_hourly"] = None
             else:
-                upload_success = True
-                wl_hourly = (
-                    df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
-                    .rename(columns={"Level Air": "Water_level"})
-                    .sort_values(by="Datetime", ascending=True)
-                    .round(2)
-                )
-                st.success("✅ File uploaded successfully!")
-                st.dataframe(wl_hourly)
+                df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
+                start_limit = start_datetime - pd.Timedelta(hours=24)
+                df_wl_filtered = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
 
-    except Exception as e:
-        st.error(f"Failed to read file: {e}")
+                expected_hours = pd.date_range(start=start_limit, end=start_datetime - pd.Timedelta(hours=1), freq='H')
+                actual_hours = pd.to_datetime(df_wl_filtered["Datetime"].sort_values().unique())
+                missing_hours = sorted(set(expected_hours) - set(actual_hours))
+                if missing_hours:
+                    missing_str = ', '.join([dt.strftime("%Y-%m-%d %H:%M") for dt in missing_hours])
+                    st.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
+                    st.session_state["upload_success"] = False
+                    st.session_state["wl_hourly"] = None
+                else:
+                    wl_hourly = (
+                        df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
+                        .rename(columns={"Level Air": "Water_level"})
+                        .sort_values(by="Datetime", ascending=True)
+                        .round(2)
+                    )
+                    st.session_state["upload_success"] = True
+                    st.session_state["wl_hourly"] = wl_hourly
+                    # show preview here
+                    st.success("✅ File uploaded successfully!")
+                    st.dataframe(wl_hourly, use_container_width=True)
+        except Exception as e:
+            st.error(f"Failed to read file: {e}")
+            st.session_state["upload_success"] = False
+            st.session_state["wl_hourly"] = None
+    else:
+        # uploader empty: if previously had file name, it means user cleared uploader -> reset
+        if st.session_state.get("uploaded_file_name"):
+            reset_dashboard_state(keep_uploaded=False)
+            st.session_state["uploaded_file_name"] = None
+            # rerun so UI becomes clean
+            st.experimental_rerun()
+        else:
+            st.info("No file uploaded yet.")
 
-# -----------------------------
-# Fetch climate functions
-# -----------------------------
-def fetch_climate_historical(start_dt, end_dt, lat=-0.1054, lon=114.2011):
-    start_date = start_dt.date().isoformat()
-    end_date = end_dt.date().isoformat()
-    url = (
-        f"https://archive-api.open-meteo.com/v1/archive?"
-        f"latitude={lat}&longitude={lon}"
-        f"&start_date={start_date}&end_date={end_date}"
-        f"&hourly=surface_pressure,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,rain"
-        f"&timezone=Asia%2FBangkok"
-    )
-    resp = requests.get(url, timeout=30)
-    data = resp.json()
-    df = pd.DataFrame({
-        "Datetime": pd.to_datetime(data["hourly"]["time"]),
-        "Rainfall": data["hourly"]["rain"],
-        "Cloud_cover": data["hourly"]["cloud_cover"],
-        "Surface_pressure": data["hourly"]["surface_pressure"],
-        "Soil_temperature": data["hourly"]["soil_temperature_0_to_7cm"],
-        "Soil_moisture": data["hourly"]["soil_moisture_0_to_7cm"]
-    })
-    df["Datetime"] = df["Datetime"].dt.floor("H")
-    return df
-
-def fetch_climate_forecast(lat=-0.1054, lon=114.2011):
-    url = (
-        f"https://api.open-meteo.com/v1/forecast?"
-        f"latitude={lat}&longitude={lon}"
-        f"&hourly=rain,surface_pressure,cloud_cover,soil_moisture_0_to_1cm,soil_temperature_0cm"
-        f"&timezone=Asia%2FBangkok&forecast_days=14"
-    )
-    resp = requests.get(url, timeout=30)
-    data = resp.json()
-    df = pd.DataFrame({
-        "Datetime": pd.to_datetime(data["hourly"]["time"]),
-        "Rainfall": data["hourly"]["rain"],
-        "Cloud_cover": data["hourly"]["cloud_cover"],
-        "Surface_pressure": data["hourly"]["surface_pressure"],
-        "Soil_temperature": data["hourly"]["soil_temperature_0cm"],
-        "Soil_moisture": data["hourly"]["soil_moisture_0_to_1cm"]
-    })
-    df["Datetime"] = df["Datetime"].dt.floor("H")
-    return df
+    # Always show Run button in preview area (enabled only if upload_success True)
+    col_run, col_spacer = st.columns([1, 3])
+    with col_run:
+        run_forecast = st.button("Run 7-Day Forecast")
+    # give user hint about whether button enabled
+    if not st.session_state.get("upload_success", False):
+        st.caption("Upload a valid 24-hour CSV to enable forecasting.")
 
 # -----------------------------
-# Smoothing Function (Savitzky–Golay)
+# If user pressed Run -> clear preview/result and start forecast
 # -----------------------------
-def smooth_savgol(series, window=7, poly=2):
-    series = pd.Series(series).interpolate().bfill().ffill()
-    n = len(series)
-    if n < 3:
-        return series
-    window = min(window, n if n % 2 == 1 else n - 1)
-    return pd.Series(savgol_filter(series, window_length=window, polyorder=poly))
+# Note: do NOT call st.rerun before clearing UI containers to avoid ghost elements.
+if 'run_forecast' in locals() and run_forecast:
+    if st.session_state.get("upload_success", False) and st.session_state.get("wl_hourly") is not None:
+        # Clear UI containers immediately to prevent showing stale plot/tables
+        result_container.empty()
+        preview_container.empty()
+        # set flags and rerun to enter forecast-running branch
+        st.session_state["forecast_done"] = False
+        st.session_state["final_df"] = None
+        st.session_state["forecast_running"] = True
+        # experimental rerun is safer across versions to force fresh render
+        st.experimental_rerun()
+    else:
+        st.warning("Please upload a valid 24-hour CSV file before running the forecast.")
 
 # -----------------------------
-# Tombol Forecast
+# Forecast running block (executes after rerun when forecast_running True)
 # -----------------------------
-run_forecast = st.button("Run 7-Day Forecast")
-
-# Inisialisasi session_state
-if "forecast_done" not in st.session_state:
-    st.session_state["forecast_done"] = False
-if "final_df" not in st.session_state:
-    st.session_state["final_df"] = None
-if "forecast_running" not in st.session_state:
-    st.session_state["forecast_running"] = False
-
-# Jika tombol ditekan → reset hasil lama dan trigger rerun
-if run_forecast:
-    st.session_state["forecast_done"] = False
-    st.session_state["final_df"] = None
-    st.session_state["forecast_running"] = True
-    st.rerun()
-
-# Jalankan forecast setelah rerun (saat flag aktif)
-if upload_success and st.session_state["forecast_running"]:
+if st.session_state.get("forecast_running", False) and st.session_state.get("wl_hourly") is not None:
+    # Show progress UI
     progress_container = st.empty()
     progress_bar = st.progress(0)
-    
+    progress_container.markdown("Fetching data and running forecast — please wait...")
+
+    # total steps approx (fetch + merge + iterative forecast hours)
     total_steps = 3 + 168
     step_counter = 0
 
-    # 1️⃣ Fetch climate data
-    progress_container.markdown("Fetching climate data...")
-    start_dt = wl_hourly["Datetime"].min()
-    end_dt = wl_hourly["Datetime"].max()
-    climate_hist = fetch_climate_historical(start_dt, end_dt)
+    # 1) fetch climate historical for wl period
+    try:
+        start_dt = st.session_state["wl_hourly"]["Datetime"].min()
+        end_dt = st.session_state["wl_hourly"]["Datetime"].max()
+    except Exception:
+        # fallback if session stored DF differently
+        start_dt = start_datetime - pd.Timedelta(hours=24)
+        end_dt = start_datetime - pd.Timedelta(hours=1)
 
+    climate_hist = fetch_climate_historical(start_dt, end_dt)
+    step_counter += 1
+    progress_bar.progress(step_counter / total_steps)
+
+    # 2) prepare forecast climate data and merge
     forecast_hours = [start_datetime + timedelta(hours=i) for i in range(0, 168)]
     forecast_df = pd.DataFrame({"Datetime": forecast_hours})
-    forecast_start, forecast_end = forecast_df["Datetime"].min(), forecast_df["Datetime"].max()
-    hist_df = fetch_climate_historical(forecast_start, gmt7_now)
+    hist_df = fetch_climate_historical(forecast_df["Datetime"].min(), gmt7_now)
     fore_df = fetch_climate_forecast()
     climate_forecast = pd.concat([hist_df, fore_df]).drop_duplicates(subset="Datetime")
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
-    # 2️⃣ Merge data
-    progress_container.markdown("Merging water level and climate data...")
-    merged_df = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
+    # merge wl + climate
+    merged_df = pd.merge(st.session_state["wl_hourly"], climate_hist, on="Datetime", how="left").sort_values("Datetime")
     merged_df["Source"] = "Historical"
     forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
     forecast_merged["Water_level"] = np.nan
@@ -225,79 +257,82 @@ if upload_success and st.session_state["forecast_running"]:
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
-    # 3️⃣ Iterative forecast
-    progress_container.markdown("Forecasting water level for 7 days...")
+    # 3) iterative forecasting using model features (this part uses your loaded model)
     model_features = model.get_booster().feature_names
-    forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
-    
-    for i, idx in enumerate(forecast_indices, start=1):
-        step_counter += 1
-        progress_bar.progress(step_counter / total_steps)
-        progress_container.markdown(f"Forecasting hour {i}/{len(forecast_indices)}...")
+    forecast_indices = final_df.index[final_df["Source"] == "Forecast"]
 
+    for i, idx in enumerate(forecast_indices, start=1):
+        # build X using lag features from final_df; fallback to last historical if index-lag out-of-range
         X_forecast = pd.DataFrame(columns=model_features, index=[0])
         for f in model_features:
-            base, lag = f.rsplit("_Lag",1)
+            base, lag = f.rsplit("_Lag", 1)
             lag = int(lag)
             try:
-                X_forecast.at[0,f] = final_df.loc[idx-lag, base]
-            except:
-                X_forecast.at[0,f] = final_df.loc[final_df["Source"]=="Historical", base].iloc[-lag]
+                X_forecast.at[0, f] = final_df.loc[idx - lag, base]
+            except Exception:
+                X_forecast.at[0, f] = final_df.loc[final_df["Source"] == "Historical", base].iloc[-lag]
         X_forecast = X_forecast.astype(float)
-
         y_hat = model.predict(X_forecast)[0]
-        if y_hat < 0: y_hat = 0.0
-        final_df.at[idx, "Water_level"] = round(y_hat,2)
+        if y_hat < 0:
+            y_hat = 0.0
+        final_df.at[idx, "Water_level"] = round(y_hat, 2)
 
-    progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
+        # update progress occasionally to keep UI responsive
+        if i % 8 == 0 or i == len(forecast_indices):
+            step_counter += 8 if (step_counter + 8) <= total_steps else 1
+            progress_bar.progress(min(step_counter / total_steps, 1.0))
+            progress_container.markdown(f"Forecasting hour {i}/{len(forecast_indices)}...")
+
     progress_bar.progress(1.0)
+    progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
+    t.sleep(0.4)
 
-    # Apply smoothing
+    # smoothing
     final_df["Water_level_smooth"] = smooth_savgol(final_df["Water_level"], window=7, poly=2)
     historical_mask = final_df["Source"] == "Historical"
     final_df.loc[historical_mask, "Water_level_smooth"] = final_df.loc[historical_mask, "Water_level"]
 
-    # Simpan ke session_state
+    # store results & update flags
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
-    st.session_state["forecast_running"] = False  # ✅ reset running status
+    st.session_state["forecast_running"] = False
+
+    # clear progress UI then rerun to display results cleanly
+    progress_container.empty()
+    progress_bar.empty()
+    st.experimental_rerun()
 
 # -----------------------------
-# Placeholder hasil (agar bisa dihapus saat rerun)
+# Display results only when done (in result_container)
 # -----------------------------
-result_container = st.empty()
-
-# -----------------------------
-# Tampilkan hasil forecast jika sudah selesai
-# -----------------------------
-if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
-    with result_container.container():  # ✅ isi container hanya kalau forecast selesai
+with result_container:
+    if st.session_state.get("forecast_done", False) and st.session_state.get("final_df") is not None:
         final_df = st.session_state["final_df"]
+
         st.subheader("Water Level + Climate Data with Forecast (Smoothed)")
+
         def highlight_forecast(row):
-            color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
-            return [color]*len(row)
+            color = 'background-color: #cfe9ff' if row['Source'] == "Forecast" else ''
+            return [color] * len(row)
+
         format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
         styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
         st.dataframe(styled_df, use_container_width=True, height=500)
-    
-        # -----------------------------
+
         # Plot
-        # -----------------------------
         st.subheader("Water Level Forecast Plot (Smoothed)")
         rmse_est = 0.06
         fig = go.Figure()
-        
-        hist_df = final_df[final_df["Source"]=="Historical"]
-        forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
-    
+        hist_df = final_df[final_df["Source"] == "Historical"]
+        forecast_df_plot = final_df[final_df["Source"] == "Forecast"]
+
         if not forecast_df_plot.empty:
             last_hist_time = hist_df["Datetime"].iloc[-1]
             last_hist_value = hist_df["Water_level_smooth"].iloc[-1]
-        
+
             forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
             forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level_smooth"]])
-        
+
             fig.add_trace(go.Scatter(
                 x=forecast_plot_x,
                 y=forecast_plot_y,
@@ -307,7 +342,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                 marker=dict(size=4),
                 hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
             ))
-        
+
             rmse_y_upper = (forecast_plot_y + rmse_est)
             rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
             fig.add_trace(go.Scatter(
@@ -320,7 +355,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                 showlegend=True,
                 name=f"RMSE ±{rmse_est}"
             ))
-    
+
         fig.add_trace(go.Scatter(
             x=hist_df["Datetime"],
             y=hist_df["Water_level_smooth"],
@@ -330,7 +365,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
             marker=dict(size=4),
             hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
         ))
-        
+
         fig.update_layout(
             xaxis_title="Datetime",
             yaxis_title="Water Level (m)",
@@ -338,24 +373,22 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
             template="plotly_white",
             hovermode="closest"
         )
-        
+
         st.plotly_chart(fig, use_container_width=True)
-    
-        # -----------------------------
+
         # Downloads
-        # -----------------------------
         export_df = final_df[["Datetime", "Water_level", "Water_level_smooth"]].copy()
         export_df["Water_level"] = export_df["Water_level"].round(2)
         export_df["Water_level_smooth"] = export_df["Water_level_smooth"].round(2)
         export_df["Datetime"] = export_df["Datetime"].astype(str)
-    
+
         csv_buffer = export_df.to_csv(index=False).encode('utf-8')
-    
+
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             export_df.to_excel(writer, index=False, sheet_name="Forecast")
         excel_buffer.seek(0)
-    
+
         pdf_buffer = BytesIO()
         doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
         styles = getSampleStyleSheet()
@@ -372,7 +405,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         ]))
         elements = [Paragraph("Joloi Water Level Forecast (Smoothed)", styles["Title"]), table]
         doc.build(elements)
-    
+
         col1, col2, col3 = st.columns(3)
         with col1:
             st.download_button("Download CSV", csv_buffer, "water_level_forecast.csv", "text/csv", use_container_width=True)
@@ -381,5 +414,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col3:
             st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
-else:
-    result_container.empty()  # ✅ kosongkan saat rerun / belum forecast
+    else:
+        # ensure nothing leftover shown
+        st.write("")  # minimal placeholder, result area remains empty
+
