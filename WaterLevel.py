@@ -35,11 +35,6 @@ else:
 # Select forecast start datetime
 # -----------------------------
 st.subheader("Select Start Date & Time for 7-Day Forecast")
-selected_date = st.date_input("Date", value=rounded_now.date(), max_value=rounded_now.date())
-# -----------------------------
-# Select forecast start datetime
-# -----------------------------
-st.subheader("Select Start Date & Time for 7-Day Forecast")
 
 selected_date = st.date_input(
     "Date",
