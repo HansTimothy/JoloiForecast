@@ -176,22 +176,36 @@ def smooth_savgol(series, window=7, poly=2):
     return pd.Series(savgol_filter(series, window_length=window, polyorder=poly))
 
 # -----------------------------
-# Run 7-Day Forecast
+# Tombol Forecast
 # -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
 
-# Inisialisasi session_state jika belum ada
+# Inisialisasi session_state
 if "forecast_done" not in st.session_state:
     st.session_state["forecast_done"] = False
 if "final_df" not in st.session_state:
     st.session_state["final_df"] = None
+if "forecast_running" not in st.session_state:
+    st.session_state["forecast_running"] = False
 
-# Jika tombol ditekan dan data upload valid
+# Jika tombol ditekan dan file valid
 if upload_success and run_forecast:
-    # 🔹 Reset state supaya tabel preview dan plot lama hilang
+    # Reset semua state agar tabel & plot hilang dulu
     st.session_state["forecast_done"] = False
+    st.session_state["forecast_running"] = True
     st.session_state["final_df"] = None
 
+# -----------------------------
+# Tampilkan tabel preview hanya saat belum forecast
+# -----------------------------
+if upload_success and not st.session_state["forecast_done"] and not st.session_state["forecast_running"]:
+    st.subheader("Uploaded Water Level Data")
+    st.dataframe(wl_hourly)
+
+# -----------------------------
+# Jalankan forecast jika sedang running
+# -----------------------------
+if upload_success and st.session_state["forecast_running"]:
     progress_container = st.empty()
     progress_bar = st.progress(0)
     
@@ -260,18 +274,12 @@ if upload_success and run_forecast:
     # Simpan ke session_state
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
+    st.session_state["forecast_running"] = False  # ✅ reset running status
 
 # -----------------------------
-# Tampilkan tabel preview **hanya jika forecast belum dimulai**
+# Tampilkan hasil forecast jika sudah selesai
 # -----------------------------
-if upload_success and not st.session_state.get("forecast_done", False):
-    st.subheader("Uploaded Water Level Data")
-    st.dataframe(wl_hourly)
-
-# -----------------------------
-# Display Forecast Results
-# -----------------------------
-if st.session_state.get("forecast_done", False):
+if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
     final_df = st.session_state["final_df"]
 
     st.subheader("Water Level + Climate Data with Forecast (Smoothed)")
