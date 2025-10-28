@@ -183,20 +183,14 @@ if "final_df" not in st.session_state:
 if "forecast_running" not in st.session_state:
     st.session_state["forecast_running"] = False
 
-# Hapus hasil forecast sebelumnya agar plot & tabel hilang dulu
+# Jika tombol ditekan → reset hasil lama dan trigger rerun
 if run_forecast:
     st.session_state["forecast_done"] = False
-    st.session_state["forecast_running"] = False
     st.session_state["final_df"] = None
+    st.session_state["forecast_running"] = True
     st.rerun()
 
-# Jika tombol ditekan dan file valid
-if upload_success and run_forecast:
-    st.session_state["forecast_running"] = True
-
-# -----------------------------
-# Jalankan forecast jika sedang running
-# -----------------------------
+# Jalankan forecast setelah rerun (saat flag aktif)
 if upload_success and st.session_state["forecast_running"]:
     progress_container = st.empty()
     progress_bar = st.progress(0)
