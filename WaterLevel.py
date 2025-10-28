@@ -103,7 +103,7 @@ else:
         st.session_state["last_date"] = selected_date
         st.session_state["last_hour"] = selected_hour
         # Immediately rerun so UI clears (prevents ghosting)
-        st.experimental_rerun()
+        st.rerun()
 
 # -----------------------------
 # Instructions
