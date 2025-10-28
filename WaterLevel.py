@@ -188,7 +188,7 @@ if run_forecast:
     st.session_state["forecast_done"] = False
     st.session_state["forecast_running"] = False
     st.session_state["final_df"] = None
-    st.experimental_rerun()
+    st.rerun()
 
 # Jika tombol ditekan dan file valid
 if upload_success and run_forecast:
