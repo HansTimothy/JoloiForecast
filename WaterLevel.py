@@ -263,116 +263,123 @@ if upload_success and st.session_state["forecast_running"]:
     st.session_state["forecast_running"] = False  # ✅ reset running status
 
 # -----------------------------
+# Placeholder hasil (agar bisa dihapus saat rerun)
+# -----------------------------
+result_container = st.empty()
+
+# -----------------------------
 # Tampilkan hasil forecast jika sudah selesai
 # -----------------------------
 if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
-    final_df = st.session_state["final_df"]
-
-    st.subheader("Water Level + Climate Data with Forecast (Smoothed)")
-    def highlight_forecast(row):
-        color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
-        return [color]*len(row)
-    format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
-    styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
-    st.dataframe(styled_df, use_container_width=True, height=500)
-
-    # -----------------------------
-    # Plot
-    # -----------------------------
-    st.subheader("Water Level Forecast Plot (Smoothed)")
-    rmse_est = 0.06
-    fig = go.Figure()
+    with result_container.container():  # ✅ isi container hanya kalau forecast selesai
+        final_df = st.session_state["final_df"]
+        st.subheader("Water Level + Climate Data with Forecast (Smoothed)")
+        def highlight_forecast(row):
+            color = 'background-color: #cfe9ff' if row['Source']=="Forecast" else ''
+            return [color]*len(row)
+        format_dict = {col: "{:.2f}" for col in final_df.select_dtypes(include=np.number).columns}
+        styled_df = final_df.style.apply(highlight_forecast, axis=1).format(format_dict)
+        st.dataframe(styled_df, use_container_width=True, height=500)
     
-    hist_df = final_df[final_df["Source"]=="Historical"]
-    forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
-
-    if not forecast_df_plot.empty:
-        last_hist_time = hist_df["Datetime"].iloc[-1]
-        last_hist_value = hist_df["Water_level_smooth"].iloc[-1]
+        # -----------------------------
+        # Plot
+        # -----------------------------
+        st.subheader("Water Level Forecast Plot (Smoothed)")
+        rmse_est = 0.06
+        fig = go.Figure()
+        
+        hist_df = final_df[final_df["Source"]=="Historical"]
+        forecast_df_plot = final_df[final_df["Source"]=="Forecast"]
     
-        forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
-        forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level_smooth"]])
+        if not forecast_df_plot.empty:
+            last_hist_time = hist_df["Datetime"].iloc[-1]
+            last_hist_value = hist_df["Water_level_smooth"].iloc[-1]
+        
+            forecast_plot_x = pd.concat([pd.Series([last_hist_time]), forecast_df_plot["Datetime"]])
+            forecast_plot_y = pd.concat([pd.Series([last_hist_value]), forecast_df_plot["Water_level_smooth"]])
+        
+            fig.add_trace(go.Scatter(
+                x=forecast_plot_x,
+                y=forecast_plot_y,
+                mode="lines+markers",
+                name="Forecast (Smoothed)",
+                line=dict(color="orange", width=2),
+                marker=dict(size=4),
+                hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
+            ))
+        
+            rmse_y_upper = (forecast_plot_y + rmse_est)
+            rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
+            fig.add_trace(go.Scatter(
+                x=pd.concat([forecast_plot_x, forecast_plot_x[::-1]]),
+                y=pd.concat([rmse_y_upper, rmse_y_lower[::-1]]),
+                fill='toself',
+                fillcolor='rgba(255,165,0,0.2)',
+                line=dict(color='rgba(255,255,255,0)'),
+                hoverinfo="skip",
+                showlegend=True,
+                name=f"RMSE ±{rmse_est}"
+            ))
     
         fig.add_trace(go.Scatter(
-            x=forecast_plot_x,
-            y=forecast_plot_y,
+            x=hist_df["Datetime"],
+            y=hist_df["Water_level_smooth"],
             mode="lines+markers",
-            name="Forecast (Smoothed)",
-            line=dict(color="orange", width=2),
+            name="Historical",
+            line=dict(color="blue", width=2),
             marker=dict(size=4),
             hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
         ))
+        
+        fig.update_layout(
+            xaxis_title="Datetime",
+            yaxis_title="Water Level (m)",
+            title="Water Level Historical vs 7-Day Forecast (Smoothed)",
+            template="plotly_white",
+            hovermode="closest"
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
     
-        rmse_y_upper = (forecast_plot_y + rmse_est)
-        rmse_y_lower = (forecast_plot_y - rmse_est).clip(0)
-        fig.add_trace(go.Scatter(
-            x=pd.concat([forecast_plot_x, forecast_plot_x[::-1]]),
-            y=pd.concat([rmse_y_upper, rmse_y_lower[::-1]]),
-            fill='toself',
-            fillcolor='rgba(255,165,0,0.2)',
-            line=dict(color='rgba(255,255,255,0)'),
-            hoverinfo="skip",
-            showlegend=True,
-            name=f"RMSE ±{rmse_est}"
-        ))
-
-    fig.add_trace(go.Scatter(
-        x=hist_df["Datetime"],
-        y=hist_df["Water_level_smooth"],
-        mode="lines+markers",
-        name="Historical",
-        line=dict(color="blue", width=2),
-        marker=dict(size=4),
-        hovertemplate="Datetime: %{x}<br>Water Level: %{y:.2f} m"
-    ))
+        # -----------------------------
+        # Downloads
+        # -----------------------------
+        export_df = final_df[["Datetime", "Water_level", "Water_level_smooth"]].copy()
+        export_df["Water_level"] = export_df["Water_level"].round(2)
+        export_df["Water_level_smooth"] = export_df["Water_level_smooth"].round(2)
+        export_df["Datetime"] = export_df["Datetime"].astype(str)
     
-    fig.update_layout(
-        xaxis_title="Datetime",
-        yaxis_title="Water Level (m)",
-        title="Water Level Historical vs 7-Day Forecast (Smoothed)",
-        template="plotly_white",
-        hovermode="closest"
-    )
+        csv_buffer = export_df.to_csv(index=False).encode('utf-8')
     
-    st.plotly_chart(fig, use_container_width=True)
-
-    # -----------------------------
-    # Downloads
-    # -----------------------------
-    export_df = final_df[["Datetime", "Water_level", "Water_level_smooth"]].copy()
-    export_df["Water_level"] = export_df["Water_level"].round(2)
-    export_df["Water_level_smooth"] = export_df["Water_level_smooth"].round(2)
-    export_df["Datetime"] = export_df["Datetime"].astype(str)
-
-    csv_buffer = export_df.to_csv(index=False).encode('utf-8')
-
-    excel_buffer = BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-        export_df.to_excel(writer, index=False, sheet_name="Forecast")
-    excel_buffer.seek(0)
-
-    pdf_buffer = BytesIO()
-    doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
-    styles = getSampleStyleSheet()
-    data = [export_df.columns.tolist()] + export_df.values.tolist()
-    table = Table(data)
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#007acc")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
-    ]))
-    elements = [Paragraph("Joloi Water Level Forecast (Smoothed)", styles["Title"]), table]
-    doc.build(elements)
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.download_button("Download CSV", csv_buffer, "water_level_forecast.csv", "text/csv", use_container_width=True)
-    with col2:
-        st.download_button("Download Excel", excel_buffer, "water_level_forecast.xlsx",
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-    with col3:
-        st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            export_df.to_excel(writer, index=False, sheet_name="Forecast")
+        excel_buffer.seek(0)
+    
+        pdf_buffer = BytesIO()
+        doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
+        styles = getSampleStyleSheet()
+        data = [export_df.columns.tolist()] + export_df.values.tolist()
+        table = Table(data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#007acc")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+        ]))
+        elements = [Paragraph("Joloi Water Level Forecast (Smoothed)", styles["Title"]), table]
+        doc.build(elements)
+    
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.download_button("Download CSV", csv_buffer, "water_level_forecast.csv", "text/csv", use_container_width=True)
+        with col2:
+            st.download_button("Download Excel", excel_buffer, "water_level_forecast.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        with col3:
+            st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
+else:
+    result_container.empty()  # ✅ kosongkan saat rerun / belum forecast
