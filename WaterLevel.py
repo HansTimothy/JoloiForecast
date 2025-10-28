@@ -15,15 +15,6 @@ import plotly.graph_objects as go
 from scipy.signal import savgol_filter
 
 # -----------------------------
-# Helper function untuk reset dashboard
-# -----------------------------
-def reset_dashboard():
-    for key in ["forecast_done", "final_df", "forecast_running"]:
-        st.session_state[key] = False if key != "final_df" else None
-    st.session_state["uploaded_file_name"] = None
-    st.rerun()
-
-# -----------------------------
 # Load trained model
 # -----------------------------
 model = joblib.load("xgb_waterlevel_hourly_model.pkl")
@@ -67,21 +58,6 @@ selected_hour_str = st.selectbox(
 )
 
 selected_hour = int(selected_hour_str.split(":")[0])
-
-# -----------------------------
-# Reset ketika tanggal / jam berubah
-# -----------------------------
-if "last_date" not in st.session_state:
-    st.session_state["last_date"] = selected_date
-if "last_hour" not in st.session_state:
-    st.session_state["last_hour"] = selected_hour
-
-# Jika user mengubah tanggal atau jam → reset tampilan
-if (st.session_state["last_date"] != selected_date) or (st.session_state["last_hour"] != selected_hour):
-    st.session_state["last_date"] = selected_date
-    st.session_state["last_hour"] = selected_hour
-    reset_dashboard()
-
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
 
@@ -103,20 +79,6 @@ st.info(
 # -----------------------------
 st.subheader("Upload Hourly Water Level File")
 uploaded_file = st.file_uploader("Upload CSV File (AWLR Joloi Logs)", type=["csv"])
-# -----------------------------
-# Reset jika file baru diupload
-# -----------------------------
-if "uploaded_file_name" not in st.session_state:
-    st.session_state["uploaded_file_name"] = None
-
-if uploaded_file is not None:
-    if st.session_state["uploaded_file_name"] != uploaded_file.name:
-        st.session_state["uploaded_file_name"] = uploaded_file.name
-        reset_dashboard()
-elif uploaded_file is None and st.session_state.get("uploaded_file_name"):
-    # Jika file dihapus dari uploader
-    reset_dashboard()
-
 wl_hourly = None
 upload_success = False
 
