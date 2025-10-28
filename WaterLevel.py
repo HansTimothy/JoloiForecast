@@ -191,13 +191,6 @@ if upload_success and run_forecast:
     st.session_state["final_df"] = None
 
 # -----------------------------
-# Tampilkan tabel preview hanya saat belum forecast
-# -----------------------------
-if upload_success and not st.session_state["forecast_done"] and not st.session_state["forecast_running"]:
-    st.subheader("Uploaded Water Level Data")
-    st.dataframe(wl_hourly)
-
-# -----------------------------
 # Jalankan forecast jika sedang running
 # -----------------------------
 if upload_success and st.session_state["forecast_running"]:
