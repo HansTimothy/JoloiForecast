@@ -181,7 +181,7 @@ with preview_container:
             reset_dashboard_state(keep_uploaded=False)
             st.session_state["uploaded_file_name"] = None
             # rerun so UI becomes clean
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.info("No file uploaded yet.")
 
@@ -207,7 +207,7 @@ if 'run_forecast' in locals() and run_forecast:
         st.session_state["final_df"] = None
         st.session_state["forecast_running"] = True
         # experimental rerun is safer across versions to force fresh render
-        st.experimental_rerun()
+        st.rerun()
     else:
         st.warning("Please upload a valid 24-hour CSV file before running the forecast.")
 
@@ -300,7 +300,7 @@ if st.session_state.get("forecast_running", False) and st.session_state.get("wl_
     # clear progress UI then rerun to display results cleanly
     progress_container.empty()
     progress_bar.empty()
-    st.experimental_rerun()
+    st.rerun()
 
 # -----------------------------
 # Display results only when done (in result_container)
