@@ -147,8 +147,6 @@ numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
 # -----------------------------
 def fetch_historical_multi(start_dt, end_dt):
     numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
-
-    # Gabungkan semua latitude & longitude menjadi string
     latitudes = ",".join([str(p[0]) for p in points])
     longitudes = ",".join([str(p[1]) for p in points])
 
@@ -161,31 +159,37 @@ def fetch_historical_multi(start_dt, end_dt):
     )
 
     data = requests.get(url, timeout=60).json()
-
-    # data["hourly"] sekarang list per titik
     all_dfs = []
-    for i, point_data in enumerate(data["hourly"]):
-        df = pd.DataFrame(point_data)
-        df["Datetime"] = pd.to_datetime(df["time"])
-        df["latitude"], df["longitude"], df["direction"] = points[i][0], points[i][1], directions[i]
-        df["distance_km"] = haversine(df["latitude"], df["longitude"], center[0], center[1])
+
+    times = pd.to_datetime(data["hourly"]["time"])
+    for i, (lat, lon, dir_name) in enumerate(zip([p[0] for p in points],[p[1] for p in points], directions)):
+        df = pd.DataFrame({
+            "Datetime": times,
+            "precipitation": [v[i] for v in data["hourly"]["precipitation"]],
+            "cloud_cover": [v[i] for v in data["hourly"]["cloud_cover"]],
+            "soil_moisture_0_to_7cm": [v[i] for v in data["hourly"]["soil_moisture_0_to_7cm"]],
+            "latitude": lat,
+            "longitude": lon,
+            "direction": dir_name
+        })
+        df["distance_km"] = haversine(lat, lon, center[0], center[1])
         all_dfs.append(df)
 
     # IDW per jam
     weighted_list = []
-    for time, group in pd.concat(all_dfs).groupby("Datetime"):
+    concat_df = pd.concat(all_dfs)
+    for time, group in concat_df.groupby("Datetime"):
         weights = 1 / (group["distance_km"]**2)
         weights /= weights.sum()
-        weighted_vals = (group[numeric_cols].T * weights.values).T.sum()
-        weighted_vals["Datetime"] = time
+        weighted_vals = {
+            "Datetime": time,
+            "Rainfall": (group["precipitation"]*weights).sum(),
+            "Cloud_cover": (group["cloud_cover"]*weights).sum(),
+            "Soil_moisture": (group["soil_moisture_0_to_7cm"]*weights).sum()
+        }
         weighted_list.append(weighted_vals)
 
     df_weighted = pd.DataFrame(weighted_list)
-    df_weighted.rename(columns={
-        "precipitation":"Rainfall",
-        "cloud_cover":"Cloud_cover",
-        "soil_moisture_0_to_7cm":"Soil_moisture"
-    }, inplace=True)
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
     return df_weighted
 
