@@ -190,29 +190,17 @@ def fetch_forecast_multi():
         f"&timezone=Asia%2FBangkok&forecast_days=7"
     )
     data = requests.get(url, timeout=30).json()
-    
+
     all_dfs = []
-    hourly_raw = data.get("hourly")
-    if isinstance(hourly_raw, list):
-        # kasus multi‑lokasi: hourly_raw adalah list of dicts
-        for i, dir_name in enumerate(directions):
-            hourly_point = hourly_raw[i]
-            df = pd.DataFrame(hourly_point)
-            df["Datetime"] = pd.to_datetime(df["time"])
-            df["direction"] = dir_name
-            df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
-            all_dfs.append(df)
-    else:
-        # kasus single lokasi atau dict format
-        for i, dir_name in enumerate(directions):
-            df_dict = {k: v for k, v in hourly_raw.items()}
-            df = pd.DataFrame(df_dict)
-            df["Datetime"] = pd.to_datetime(df["time"])
-            df["direction"] = dir_name
-            df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
-            all_dfs.append(df)
-        
-    # IDW
+    for i, coord_data in enumerate(data):  # data adalah list per titik
+        hourly = coord_data["hourly"]
+        df = pd.DataFrame(hourly)
+        df["Datetime"] = pd.to_datetime(df["time"])
+        df["direction"] = directions[i]
+        df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
+        all_dfs.append(df)
+    
+    # IDW ke titik pusat
     weighted_list = []
     for time, group in pd.concat(all_dfs).groupby("Datetime"):
         sm_total = group[["soil_moisture_0_to_1cm","soil_moisture_1_to_3cm","soil_moisture_3_to_9cm"]].sum(axis=1)
@@ -226,9 +214,11 @@ def fetch_forecast_multi():
             "Datetime": time
         }
         weighted_list.append(weighted_vals)
+    
     df_weighted = pd.DataFrame(weighted_list)
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
     return df_weighted
+
     
 # -----------------------------
 # Run Forecast Button
