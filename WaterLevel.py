@@ -193,7 +193,12 @@ def fetch_forecast_multi():
     all_dfs = []
     for i, dir_name in enumerate(directions):
         # ambil data jam per titik dari list of lists
-        df_dict = {k: v[i] for k, v in data["hourly"].items()}
+        df_dict = {}
+        for k, v in data["hourly"].items():
+            if isinstance(v[0], (list, np.ndarray)):
+                df_dict[k] = v[i]
+            else:
+                df_dict[k] = v
         df = pd.DataFrame(df_dict)
         df["Datetime"] = pd.to_datetime(df["time"])
         df["direction"] = dir_name
