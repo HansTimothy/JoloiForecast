@@ -386,26 +386,83 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
 
         st.dataframe(styled_df, use_container_width=True, height=500)
 
-        # Plot
+        # -----------------------------
+        # 📊 Plot Water Level Forecast
+        # -----------------------------
         st.subheader("Water Level Forecast Plot")
+        
         fig = go.Figure()
-        hist_df = final_df[final_df["Source"]=="Historical"]
-        fore_df = final_df[final_df["Source"]=="Forecast"]
-
+        hist_df = final_df[final_df["Source"] == "Historical"]
+        fore_df = final_df[final_df["Source"] == "Forecast"]
+        
+        rmse = 0.05  # nilai RMSE tetap
         if not fore_df.empty:
+            # Tambahkan satu titik terakhir historical agar garis forecast nyambung
             last_val = hist_df["Water_level"].iloc[-1]
             forecast_x = pd.concat([pd.Series([hist_df["Datetime"].iloc[-1]]), fore_df["Datetime"]])
             forecast_y = pd.concat([pd.Series([last_val]), fore_df["Water_level"]])
-            fig.add_trace(go.Scatter(x=forecast_x, y=forecast_y,
-                                     mode="lines+markers", name="Forecast", line=dict(color="orange"), marker=dict(size=4)))
-
-        fig.add_trace(go.Scatter(x=hist_df["Datetime"], y=hist_df["Water_level"],
-                                 mode="lines+markers", name="Historical", line=dict(color="blue"), marker=dict(size=4)))
+            
+            # Hitung batas atas dan bawah ±RMSE
+            upper = forecast_y + rmse
+            lower = forecast_y - rmse
         
-        fig.update_layout(title="Water Level Historical vs Forecast",
-                          xaxis_title="Datetime", yaxis_title="Water Level (m)", template="plotly_white")
+            # Area ±RMSE
+            fig.add_trace(go.Scatter(
+                x=pd.concat([forecast_x, forecast_x[::-1]]),
+                y=pd.concat([upper, lower[::-1]]),
+                fill='toself',
+                fillcolor='rgba(255,165,0,0.15)',
+                line=dict(color='rgba(255,255,255,0)'),
+                hoverinfo="skip",
+                name='±RMSE 0.05m'
+            ))
+        
+            # Garis Forecast
+            fig.add_trace(go.Scatter(
+                x=forecast_x, y=forecast_y,
+                mode="lines+markers",
+                name="Forecast",
+                line=dict(color="orange", width=2),
+                marker=dict(size=4)
+            ))
+        
+        # Garis Historical
+        fig.add_trace(go.Scatter(
+            x=hist_df["Datetime"], y=hist_df["Water_level"],
+            mode="lines+markers",
+            name="Historical",
+            line=dict(color="blue", width=2),
+            marker=dict(size=4)
+        ))
+        
+        # Layout
+        fig.update_layout(
+            title="Water Level Historical vs Forecast",
+            xaxis_title="Datetime",
+            yaxis_title="Water Level (m)",
+            template="plotly_white",
+            annotations=[
+                dict(
+                    xref="paper", yref="paper",
+                    x=0.98, y=0.95,
+                    text=f"RMSE = ±{rmse:.2f} m",
+                    showarrow=False,
+                    font=dict(size=12, color="black"),
+                    bgcolor="rgba(255,255,255,0.7)",
+                    bordercolor="rgba(0,0,0,0.2)",
+                    borderwidth=1,
+                    borderpad=4
+                )
+            ],
+            legend=dict(
+                x=0.01, y=0.99,
+                bgcolor="rgba(255,255,255,0.6)",
+                bordercolor="rgba(0,0,0,0.1)",
+                borderwidth=1
+            )
+        )
+        
         st.plotly_chart(fig, use_container_width=True)
-
         # -----------------------------
         # Downloads (Forecast only, Datetime + Water_level, 2 decimals)
         # -----------------------------
