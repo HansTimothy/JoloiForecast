@@ -404,9 +404,10 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         st.plotly_chart(fig, use_container_width=True)
 
         # -----------------------------
-        # Downloads (Forecast only, only Datetime + Water_level)
+        # Downloads (Forecast only, Datetime + Water_level, 2 decimals)
         # -----------------------------
         forecast_only = final_df[final_df["Source"]=="Forecast"][["Datetime","Water_level"]].copy()
+        forecast_only["Water_level"] = forecast_only["Water_level"].round(2)
         forecast_only["Datetime"] = forecast_only["Datetime"].astype(str)
         
         # CSV
@@ -445,5 +446,6 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col3:
             st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
+
 else:
     result_container.empty()
