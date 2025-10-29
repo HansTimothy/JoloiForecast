@@ -182,7 +182,7 @@ def fetch_historical_multi(start_dt, end_dt):
                                                  directions)):
         try:
             df = pd.DataFrame({
-                "Datetime": times,
+                "Datetime": [v[i] for v in data["hourly"]["time"]],
                 "precipitation": [v[i] for v in data["hourly"]["precipitation"]],
                 "cloud_cover": [v[i] for v in data["hourly"]["cloud_cover"]],
                 "soil_moisture_0_to_7cm": [v[i] for v in data["hourly"]["soil_moisture_0_to_7cm"]],
@@ -256,7 +256,7 @@ def fetch_forecast_multi():
                                                  directions)):
         try:
             df = pd.DataFrame({
-                "Datetime": times,
+                "Datetime": [v[i] for v in data["hourly"]["time"]],
                 "precipitation": [v[i] for v in data["hourly"]["precipitation"]],
                 "cloud_cover": [v[i] for v in data["hourly"]["cloud_cover"]],
                 "soil_moisture_0_1cm": [v[i] for v in data["hourly"]["soil_moisture_0_1cm"]],
