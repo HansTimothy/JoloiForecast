@@ -192,27 +192,29 @@ def fetch_forecast_multi():
         f"&timezone=Asia%2FBangkok&forecast_days=7"
     )
     data = requests.get(url, timeout=30).json()
-    hourly_list = data.get("hourly", [])
 
-    # Kalau list per koordinat
-    if isinstance(hourly_list, list):
-        for i, dir_name in enumerate(directions):
-            hourly_point = hourly_list[i]
-            df = pd.DataFrame(hourly_point)
-            df["Datetime"] = pd.to_datetime(df["time"])
-            df["direction"] = dir_name
-            df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
-            all_dfs.append(df)
+    # ======= Tentukan format =======
+    if isinstance(data, list):
+        hourly_list = data  # list per koordinat
+    elif isinstance(data, dict):
+        # single lokasi atau dict format
+        hourly_list = [{"hourly": data.get("hourly", {})}]
     else:
-        # fallback dict format
-        for i, dir_name in enumerate(directions):
-            df = pd.DataFrame(hourly_list)
-            df["Datetime"] = pd.to_datetime(df["time"])
-            df["direction"] = dir_name
-            df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
-            all_dfs.append(df)
+        hourly_list = []
 
-    # IDW
+    # ======= Proses setiap titik =======
+    for i, point_data in enumerate(hourly_list):
+        dir_name = directions[i]
+        hourly_point = point_data.get("hourly", {})
+        if not hourly_point:
+            continue
+        df = pd.DataFrame(hourly_point)
+        df["Datetime"] = pd.to_datetime(df["time"])
+        df["direction"] = dir_name
+        df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
+        all_dfs.append(df)
+
+    # ======= IDW =======
     weighted_list = []
     for time, group in pd.concat(all_dfs).groupby("Datetime"):
         sm_total = group[["soil_moisture_0_to_1cm","soil_moisture_1_to_3cm","soil_moisture_3_to_9cm"]].sum(axis=1)
