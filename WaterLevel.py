@@ -332,7 +332,14 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         st.subheader("Water Level + Climate Data with Forecast")
         def highlight_forecast(row):
             return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
-        styled_df = final_df.style.apply(highlight_forecast, axis=1).format("{:.2f}")
+        
+        # Ambil semua kolom numerik
+        numeric_cols = final_df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # Terapkan format hanya untuk kolom numerik
+        styled_df = final_df.style.apply(highlight_forecast, axis=1)\
+                                   .format({col: "{:.2f}" for col in numeric_cols})
+
         st.dataframe(styled_df, use_container_width=True, height=500)
 
         # Plot
