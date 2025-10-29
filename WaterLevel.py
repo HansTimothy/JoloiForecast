@@ -331,18 +331,25 @@ if upload_success and st.session_state["forecast_running"]:
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
+
     # 3️⃣ Merge water level and climate data
     progress_container.markdown("Merging water level and climate data...")
-
-    # Pastikan kolom waktu benar
-    wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
-    climate_hist = climate_hist.rename(columns={"time": "Datetime"}) if "time" in climate_hist.columns else climate_hist
-    climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
     
-    climate_forecast = climate_forecast.rename(columns={"time": "Datetime"}) if "time" in climate_forecast.columns else climate_forecast
+    # -----------------------------
+    # Pastikan kolom waktu di semua DataFrame
+    # -----------------------------
+    for df_name, df in zip(["wl_hourly", "climate_hist", "climate_forecast"],
+                           [wl_hourly, climate_hist, climate_forecast]):
+        if df is not None:
+            if "Datetime" not in df.columns and "time" in df.columns:
+                df.rename(columns={"time": "Datetime"}, inplace=True)
+    
+    # Konversi ke datetime semua
+    wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
+    climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
     climate_forecast["Datetime"] = pd.to_datetime(climate_forecast["Datetime"])
     
-    # Merge historical
+    # Merge
     merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
     merged_hist["Source"] = "Historical"
     
