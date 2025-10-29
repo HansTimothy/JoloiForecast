@@ -145,6 +145,9 @@ numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
 # -----------------------------
 # Fungsi extract historical climate + IDW multi-point (1 API request)
 # -----------------------------
+# -----------------------------
+# Fungsi extract historical climate + IDW multi-point
+# -----------------------------
 def fetch_historical_multi(start_dt, end_dt):
     """
     Mengambil data historis dari beberapa titik sekitar center,
@@ -168,14 +171,12 @@ def fetch_historical_multi(start_dt, end_dt):
         print("Error fetching data:", e)
         return pd.DataFrame()
 
-    # Pastikan data ada
     if "hourly" not in data or not data["hourly"]:
         return pd.DataFrame()
 
     times = pd.to_datetime(data["hourly"]["time"])
     all_dfs = []
 
-    # Buat DataFrame per titik
     for i, (lat, lon, dir_name) in enumerate(zip([p[0] for p in points],
                                                  [p[1] for p in points],
                                                  directions)):
@@ -193,17 +194,14 @@ def fetch_historical_multi(start_dt, end_dt):
             print(f"Error processing point {dir_name}:", e)
             continue
 
-        # Hitung jarak ke titik pusat
         df["distance_km"] = haversine(lat, lon, center[0], center[1])
         all_dfs.append(df)
 
     if not all_dfs:
         return pd.DataFrame()
 
-    # Gabungkan semua titik
     concat_df = pd.concat(all_dfs, ignore_index=True)
 
-    # IDW per jam
     weighted_list = []
     for time, group in concat_df.groupby("Datetime"):
         weights = 1 / (group["distance_km"]**2)
@@ -222,7 +220,7 @@ def fetch_historical_multi(start_dt, end_dt):
     return df_weighted
 
 # -----------------------------
-# Fungsi extract forecast climate + IDW multi-point (1 API request)
+# Fungsi extract forecast climate + IDW multi-point
 # -----------------------------
 def fetch_forecast_multi():
     """
@@ -230,7 +228,6 @@ def fetch_forecast_multi():
     lalu melakukan IDW (Inverse Distance Weighting) per jam.
     """
     numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_1cm"]
-
     latitudes = ",".join([str(p[0]) for p in points])
     longitudes = ",".join([str(p[1]) for p in points])
 
@@ -247,14 +244,13 @@ def fetch_forecast_multi():
         print("Error fetching forecast data:", e)
         return pd.DataFrame()
 
-    # Pastikan data ada
     if "hourly" not in data or not data["hourly"]:
         return pd.DataFrame()
 
+    # Ganti kolom time → Datetime
     times = pd.to_datetime(data["hourly"]["time"])
     all_dfs = []
 
-    # Buat DataFrame per titik
     for i, (lat, lon, dir_name) in enumerate(zip([p[0] for p in points],
                                                  [p[1] for p in points],
                                                  directions)):
@@ -272,17 +268,14 @@ def fetch_forecast_multi():
             print(f"Error processing point {dir_name}:", e)
             continue
 
-        # Hitung jarak ke titik pusat
         df["distance_km"] = haversine(lat, lon, center[0], center[1])
         all_dfs.append(df)
 
     if not all_dfs:
         return pd.DataFrame()
 
-    # Gabungkan semua titik
     concat_df = pd.concat(all_dfs, ignore_index=True)
 
-    # IDW per jam
     weighted_list = []
     for time, group in concat_df.groupby("Datetime"):
         weights = 1 / (group["distance_km"]**2)
@@ -299,6 +292,7 @@ def fetch_forecast_multi():
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
 
     return df_weighted
+
     
 # -----------------------------
 # Run Forecast Button
