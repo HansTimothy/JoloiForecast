@@ -136,7 +136,7 @@ def haversine(lat1, lon1, lat2, lon2):
     a = np.sin(dlat/2)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(dlon/2)**2
     return R * 2 * np.arcsin(np.sqrt(a))
 
-numeric_cols = ["rain","cloud_cover","soil_moisture_0_to_7cm"]
+numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
 
 def fetch_historical_multi(start_dt, end_dt):
     start_date, end_date = start_dt.date().isoformat(), end_dt.date().isoformat()
@@ -164,7 +164,13 @@ def fetch_historical_multi(start_dt, end_dt):
         weighted_vals["Datetime"] = time
         weighted_list.append(weighted_vals)
     df_weighted = pd.DataFrame(weighted_list)
-    df_weighted.rename(columns={"precipitation":"Rainfall","cloud_cover":"Cloud_cover","soil_moisture_0_to_7cm":"Soil_moisture"}, inplace=True)
+    df_weighted.rename(
+        columns={
+            "precipitation":"Rainfall",
+            "cloud_cover":"Cloud_cover",
+            "soil_moisture_0_to_7cm":"Soil_moisture"
+        }, inplace=True
+    )
     df_weighted = df_weighted[["Datetime","Rainfall","Cloud_cover","Soil_moisture"]]
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
     return df_weighted
