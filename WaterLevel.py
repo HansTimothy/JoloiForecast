@@ -143,83 +143,94 @@ def haversine(lat1, lon1, lat2, lon2):
 
 numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
 
+# Fungsi extract historical climate + IDW multi-point
 def fetch_historical_multi(start_dt, end_dt):
-    start_date, end_date = start_dt.date().isoformat(), end_dt.date().isoformat()
+    numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
     all_dfs = []
+
     for lat, lon, dir_name in zip([p[0] for p in points],[p[1] for p in points], directions):
         url = (
             f"https://archive-api.open-meteo.com/v1/archive?"
             f"latitude={lat}&longitude={lon}"
-            f"&start_date={start_date}&end_date={end_date}"
+            f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
             f"&hourly=precipitation,cloud_cover,soil_moisture_0_to_7cm"
             f"&timezone=Asia%2FBangkok"
         )
         data = requests.get(url, timeout=30).json()
         df = pd.DataFrame(data["hourly"])
         df["latitude"], df["longitude"], df["direction"] = lat, lon, dir_name
-        df["time"] = pd.to_datetime(df["time"])
+        df["Datetime"] = pd.to_datetime(df["time"])
         df["distance_km"] = haversine(df["latitude"], df["longitude"], center[0], center[1])
         all_dfs.append(df)
+
     # IDW
     weighted_list = []
-    for time, group in pd.concat(all_dfs).groupby("time"):
+    for time, group in pd.concat(all_dfs).groupby("Datetime"):
         weights = 1 / (group["distance_km"]**2)
         weights /= weights.sum()
         weighted_vals = (group[numeric_cols].T*weights.values).T.sum()
         weighted_vals["Datetime"] = time
         weighted_list.append(weighted_vals)
+
     df_weighted = pd.DataFrame(weighted_list)
-    df_weighted.rename(
-        columns={
-            "precipitation":"Rainfall",
-            "cloud_cover":"Cloud_cover",
-            "soil_moisture_0_to_7cm":"Soil_moisture"
-        }, inplace=True
-    )
-    df_weighted = df_weighted[["Datetime","Rainfall","Cloud_cover","Soil_moisture"]]
+    df_weighted.rename(columns={
+        "precipitation":"Rainfall",
+        "cloud_cover":"Cloud_cover",
+        "soil_moisture_0_to_7cm":"Soil_moisture"
+    }, inplace=True)
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
     return df_weighted
 
 def fetch_forecast_multi():
-    lats = ",".join([str(p[0]) for p in points])
-    lons = ",".join([str(p[1]) for p in points])
+    numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_1cm","soil_moisture_1_to_3cm","soil_moisture_3_to_9cm"]
+    all_dfs = []
+
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
-        f"latitude={lats}&longitude={lons}"
+        f"latitude={','.join([str(p[0]) for p in points])}&longitude={','.join([str(p[1]) for p in points])}"
         f"&hourly=precipitation,cloud_cover,soil_moisture_0_to_1cm,soil_moisture_1_to_3cm,soil_moisture_3_to_9cm"
         f"&timezone=Asia%2FBangkok&forecast_days=7"
     )
     data = requests.get(url, timeout=30).json()
+    hourly_list = data.get("hourly", [])
 
-    all_dfs = []
-    for i, coord_data in enumerate(data):  # data adalah list per titik
-        hourly = coord_data["hourly"]
-        df = pd.DataFrame(hourly)
-        df["Datetime"] = pd.to_datetime(df["time"])
-        df["direction"] = directions[i]
-        df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
-        all_dfs.append(df)
-    
-    # IDW ke titik pusat
+    # Kalau list per koordinat
+    if isinstance(hourly_list, list):
+        for i, dir_name in enumerate(directions):
+            hourly_point = hourly_list[i]
+            df = pd.DataFrame(hourly_point)
+            df["Datetime"] = pd.to_datetime(df["time"])
+            df["direction"] = dir_name
+            df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
+            all_dfs.append(df)
+    else:
+        # fallback dict format
+        for i, dir_name in enumerate(directions):
+            df = pd.DataFrame(hourly_list)
+            df["Datetime"] = pd.to_datetime(df["time"])
+            df["direction"] = dir_name
+            df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
+            all_dfs.append(df)
+
+    # IDW
     weighted_list = []
     for time, group in pd.concat(all_dfs).groupby("Datetime"):
         sm_total = group[["soil_moisture_0_to_1cm","soil_moisture_1_to_3cm","soil_moisture_3_to_9cm"]].sum(axis=1)
         group["soil_moisture"] = sm_total
-        weights = 1/(group["distance_km"]**2)
+        weights = 1 / (group["distance_km"]**2)
         weights /= weights.sum()
         weighted_vals = {
+            "Datetime": time,
             "Rainfall": (group["precipitation"]*weights).sum(),
             "Cloud_cover": (group["cloud_cover"]*weights).sum(),
-            "Soil_moisture": (group["soil_moisture"]*weights).sum(),
-            "Datetime": time
+            "Soil_moisture": (group["soil_moisture"]*weights).sum()
         }
         weighted_list.append(weighted_vals)
-    
+
     df_weighted = pd.DataFrame(weighted_list)
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
     return df_weighted
-
-    
+   
 # -----------------------------
 # Run Forecast Button
 # -----------------------------
