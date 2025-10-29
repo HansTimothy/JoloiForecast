@@ -118,121 +118,88 @@ if uploaded_file is not None:
         st.error(f"Failed to read file: {e}")
 
 # -----------------------------
-# Multi-point coordinates (actual Open-Meteo points)
+# 1️⃣ Multi-point coordinates + bobot statis
 # -----------------------------
-directions = ["NW","N","NE","W","Center","E","SW","S","SE"]
-points = [
-    (0.38664, 113.64348),  # NW
-    (0.38664, 114.13605),  # N
-    (0.38664, 114.55825),  # NE
-    (-0.10545, 113.56976), # W
-    (-0.10545, 114.20109), # Center
-    (-0.10545, 114.55183), # E
-    (-0.59754, 113.62853), # SW
-    (-0.59754, 114.12226), # S
-    (-0.59754, 114.61599)  # SE
-]
+points = {
+    "NW":     {"lat": 0.38664, "lon": 113.64348, "weight": 0.0177},
+    "N":      {"lat": 0.38664, "lon": 114.13605, "weight": 0.0320},
+    "NE":     {"lat": 0.38664, "lon": 114.55825, "weight": 0.0177},
+    "W":      {"lat": -0.10545, "lon": 113.56976, "weight": 0.0291},
+    "Center": {"lat": -0.10545, "lon": 114.20109, "weight": 0.7932},
+    "E":      {"lat": -0.10545, "lon": 114.55183, "weight": 0.0401},
+    "SW":     {"lat": -0.59754, "lon": 113.62853, "weight": 0.0181},
+    "S":      {"lat": -0.59754, "lon": 114.12226, "weight": 0.0355},
+    "SE":     {"lat": -0.59754, "lon": 114.61599, "weight": 0.0165}
+}
+directions = list(points.keys())
 
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
-    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
-    dlat, dlon = lat2 - lat1, lon2 - lon1
-    a = np.sin(dlat/2)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(dlon/2)**2
-    return R * 2 * np.arcsin(np.sqrt(a))
-
-numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
+numeric_cols_hist = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
+numeric_cols_fore = ["precipitation","cloud_cover","soil_moisture_0_1cm"]
 
 # -----------------------------
-# Fungsi extract historical climate + IDW multi-point (1 API request)
-# -----------------------------
-# -----------------------------
-# Fungsi extract historical climate + IDW multi-point (satu request)
+# 2️⃣ Fungsi historical climate
 # -----------------------------
 def fetch_historical_multi(start_dt, end_dt):
-    """
-    Mengambil data historis dari beberapa titik sekaligus,
-    lalu melakukan IDW (Inverse Distance Weighting) per jam.
-    """
-    latitudes = ",".join([str(p[0]) for p in points])
-    longitudes = ",".join([str(p[1]) for p in points])
-
+    latitudes = ",".join(str(pt["lat"]) for pt in points.values())
+    longitudes = ",".join(str(pt["lon"]) for pt in points.values())
+    
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={latitudes}&longitude={longitudes}"
         f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
-        f"&hourly=precipitation,cloud_cover,soil_moisture_0_to_7cm"
-        f"&timezone=Asia%2FBangkok"
+        "&hourly=precipitation,cloud_cover,soil_moisture_0_to_7cm"
+        "&timezone=Asia%2FBangkok"
     )
 
     try:
         data = requests.get(url, timeout=60).json()
     except Exception as e:
-        print("Error fetching data:", e)
+        print("Error fetching historical data:", e)
         return pd.DataFrame()
-
-    if "hourly" not in data or not data["hourly"]:
+    
+    if not isinstance(data, list) or len(data) != len(points):
         return pd.DataFrame()
-
+    
     all_dfs = []
-
-    for i, (lat, lon, dir_name) in enumerate(zip([p[0] for p in points],
-                                                 [p[1] for p in points],
-                                                 directions)):
-        try:
-            df = pd.DataFrame({
-                "Datetime": pd.to_datetime(data["hourly"]["time"]),
-                "precipitation": [v[i] for v in data["hourly"]["precipitation"]],
-                "cloud_cover": [v[i] for v in data["hourly"]["cloud_cover"]],
-                "soil_moisture_0_to_7cm": [v[i] for v in data["hourly"]["soil_moisture_0_to_7cm"]],
-                "latitude": lat,
-                "longitude": lon,
-                "direction": dir_name
-            })
-        except Exception as e:
-            print(f"Error processing point {dir_name}:", e)
-            continue
-
-        # Hitung jarak ke center
-        df["distance_km"] = haversine(lat, lon, center[0], center[1])
+    for i, dir_name in enumerate(directions):
+        loc_data = data[i]
+        df = pd.DataFrame(loc_data["hourly"])
+        df["direction"] = dir_name
+        df["weight"] = points[dir_name]["weight"]
         all_dfs.append(df)
-
-    if not all_dfs:
-        return pd.DataFrame()
-
-    # Gabung semua titik dan hitung IDW
-    concat_df = pd.concat(all_dfs, ignore_index=True)
+    
+    df_all = pd.concat(all_dfs, ignore_index=True)
+    df_all["time"] = pd.to_datetime(df_all["time"])
+    
+    # Weighted average per jam
     weighted_list = []
-    for time, group in concat_df.groupby("Datetime"):
-        weights = 1 / (group["distance_km"]**2)
-        weights /= weights.sum()
-        weighted_vals = {
-            "Datetime": time,
-            "Rainfall": (group["precipitation"]*weights).sum(),
-            "Cloud_cover": (group["cloud_cover"]*weights).sum(),
-            "Soil_moisture": (group["soil_moisture_0_to_7cm"]*weights).sum()
-        }
+    for time, group in df_all.groupby("time"):
+        w = group["weight"]
+        weighted_vals = (group[numeric_cols_hist].T * w.values).T.sum()
+        weighted_vals["Datetime"] = time
         weighted_list.append(weighted_vals)
-
+    
     df_weighted = pd.DataFrame(weighted_list)
+    df_weighted.rename(columns={
+        "precipitation":"Rainfall",
+        "cloud_cover":"Cloud_cover",
+        "soil_moisture_0_to_7cm":"Soil_moisture"
+    }, inplace=True)
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
-    return df_weighted
+    return df_weighted[["Datetime","Rainfall","Cloud_cover","Soil_moisture"]]
 
 # -----------------------------
-# Fungsi extract forecast climate + IDW multi-point
+# 3️⃣ Fungsi forecast climate
 # -----------------------------
 def fetch_forecast_multi():
-    """
-    Mengambil data forecast 7 hari untuk beberapa titik sekaligus,
-    lalu melakukan IDW per jam.
-    """
-    latitudes = ",".join([str(p[0]) for p in points])
-    longitudes = ",".join([str(p[1]) for p in points])
-
+    latitudes = ",".join(str(pt["lat"]) for pt in points.values())
+    longitudes = ",".join(str(pt["lon"]) for pt in points.values())
+    
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={latitudes}&longitude={longitudes}"
-        f"&hourly=precipitation,cloud_cover,soil_moisture_0_1cm"
-        f"&forecast_days=7&timezone=Asia%2FBangkok"
+        "&hourly=precipitation,cloud_cover,soil_moisture_0_1cm"
+        "&forecast_days=7&timezone=Asia%2FBangkok"
     )
 
     try:
@@ -240,51 +207,37 @@ def fetch_forecast_multi():
     except Exception as e:
         print("Error fetching forecast data:", e)
         return pd.DataFrame()
-
-    if "hourly" not in data or not data["hourly"]:
+    
+    if not isinstance(data, list) or len(data) != len(points):
         return pd.DataFrame()
-
+    
     all_dfs = []
-
-    for i, (lat, lon, dir_name) in enumerate(zip([p[0] for p in points],
-                                                 [p[1] for p in points],
-                                                 directions)):
-        try:
-            df = pd.DataFrame({
-                "Datetime": pd.to_datetime(data["hourly"]["time"]),
-                "precipitation": [v[i] for v in data["hourly"]["precipitation"]],
-                "cloud_cover": [v[i] for v in data["hourly"]["cloud_cover"]],
-                "soil_moisture_0_1cm": [v[i] for v in data["hourly"]["soil_moisture_0_1cm"]],
-                "latitude": lat,
-                "longitude": lon,
-                "direction": dir_name
-            })
-        except Exception as e:
-            print(f"Error processing point {dir_name}:", e)
-            continue
-
-        df["distance_km"] = haversine(lat, lon, center[0], center[1])
+    for i, dir_name in enumerate(directions):
+        loc_data = data[i]
+        df = pd.DataFrame(loc_data["hourly"])
+        df["direction"] = dir_name
+        df["weight"] = points[dir_name]["weight"]
         all_dfs.append(df)
-
-    if not all_dfs:
-        return pd.DataFrame()
-
-    concat_df = pd.concat(all_dfs, ignore_index=True)
+    
+    df_all = pd.concat(all_dfs, ignore_index=True)
+    df_all["time"] = pd.to_datetime(df_all["time"])
+    
+    # Weighted average per jam
     weighted_list = []
-    for time, group in concat_df.groupby("Datetime"):
-        weights = 1 / (group["distance_km"]**2)
-        weights /= weights.sum()
-        weighted_vals = {
-            "Datetime": time,
-            "Rainfall": (group["precipitation"]*weights).sum(),
-            "Cloud_cover": (group["cloud_cover"]*weights).sum(),
-            "Soil_moisture": (group["soil_moisture_0_1cm"]*weights).sum()
-        }
+    for time, group in df_all.groupby("time"):
+        w = group["weight"]
+        weighted_vals = (group[numeric_cols_fore].T * w.values).T.sum()
+        weighted_vals["Datetime"] = time
         weighted_list.append(weighted_vals)
-
+    
     df_weighted = pd.DataFrame(weighted_list)
+    df_weighted.rename(columns={
+        "precipitation":"Rainfall",
+        "cloud_cover":"Cloud_cover",
+        "soil_moisture_0_1cm":"Soil_moisture"
+    }, inplace=True)
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
-    return df_weighted
+    return df_weighted[["Datetime","Rainfall","Cloud_cover","Soil_moisture"]]
 
 # -----------------------------
 # Run Forecast Button
@@ -410,6 +363,7 @@ if upload_success and st.session_state["forecast_running"]:
     st.session_state["forecast_running"] = False
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
+    
 # -----------------------------
 # Display Forecast & Plot
 # -----------------------------
