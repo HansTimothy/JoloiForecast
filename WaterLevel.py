@@ -192,14 +192,26 @@ def fetch_forecast_multi():
     data = requests.get(url, timeout=30).json()
     
     all_dfs = []
-    for i, dir_name in enumerate(directions):
-        hourly_point = data["hourly"][i]  # ambil titik ke-i
-        df = pd.DataFrame(hourly_point)
-        df["Datetime"] = pd.to_datetime(df["time"])
-        df["direction"] = dir_name
-        df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
-        all_dfs.append(df)
-    
+    hourly_raw = data.get("hourly")
+    if isinstance(hourly_raw, list):
+        # kasus multi‑lokasi: hourly_raw adalah list of dicts
+        for i, dir_name in enumerate(directions):
+            hourly_point = hourly_raw[i]
+            df = pd.DataFrame(hourly_point)
+            df["Datetime"] = pd.to_datetime(df["time"])
+            df["direction"] = dir_name
+            df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
+            all_dfs.append(df)
+    else:
+        # kasus single lokasi atau dict format
+        for i, dir_name in enumerate(directions):
+            df_dict = {k: v for k, v in hourly_raw.items()}
+            df = pd.DataFrame(df_dict)
+            df["Datetime"] = pd.to_datetime(df["time"])
+            df["direction"] = dir_name
+            df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
+            all_dfs.append(df)
+        
     # IDW
     weighted_list = []
     for time, group in pd.concat(all_dfs).groupby("Datetime"):
