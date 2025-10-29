@@ -60,29 +60,55 @@ if uploaded_file is not None:
     try:
         df_wl = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
         if "Datetime" not in df_wl.columns or "Level Air" not in df_wl.columns:
-            st.error("File must contain columns 'Datetime' and 'Level Air'.")
+            st.error("The file must contain columns 'Datetime' and 'Level Air'.")
         else:
-            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"]).dt.floor("H")
-            start_limit = start_datetime - pd.Timedelta(hours=72)
-            df_wl_filtered = df_wl[(df_wl["Datetime"] >= start_limit) & (df_wl["Datetime"] < start_datetime)]
-
-            expected_hours = pd.date_range(start=start_limit, end=start_datetime - pd.Timedelta(hours=1), freq='H')
-            actual_hours = pd.to_datetime(df_wl_filtered["Datetime"].sort_values().unique())
+            # -----------------------
+            # 1️⃣ Siapkan data
+            # -----------------------
+            df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"])
+            df_wl = df_wl.sort_values("Datetime").set_index("Datetime")
+            df_wl["Water_level"] = df_wl["Level Air"].clip(lower=0)  # hapus nilai negatif
+            
+            # -----------------------
+            # 2️⃣ Deteksi spike singkat (<120 menit)
+            # -----------------------
+            df_wl['is_up'] = df_wl['Water_level'] > 0
+            df_wl['group'] = (df_wl['is_up'] != df_wl['is_up'].shift()).cumsum()
+            group_durations = df_wl.groupby('group').size() * 3  # durasi menit (3 menit per record)
+            group_durations = group_durations.rename("duration_min")
+            df_wl = df_wl.join(group_durations, on='group')
+            
+            short_spike = (df_wl['is_up']) & (df_wl['duration_min'] < 120)
+            df_wl.loc[short_spike, 'Water_level'] = 0
+            
+            df_wl = df_wl.drop(columns=['is_up', 'group', 'duration_min', 'Level Air'])
+            
+            # -----------------------
+            # 3️⃣ Interpolasi missing values
+            # -----------------------
+            df_wl['Water_level'] = df_wl['Water_level'].interpolate(method='time')
+            
+            # -----------------------
+            # 4️⃣ Resample per jam
+            # -----------------------
+            wl_hourly = df_wl.resample('H').mean().reset_index()
+            wl_hourly['Water_level'] = wl_hourly['Water_level'].interpolate().round(2)
+            
+            # -----------------------
+            # 5️⃣ Validasi missing hours (24 jam sebelum start)
+            # -----------------------
+            start_limit = start_datetime - pd.Timedelta(hours=24)
+            end_limit = start_datetime
+            expected_hours = pd.date_range(start=start_limit, end=end_limit - pd.Timedelta(hours=1), freq='H')
+            actual_hours = pd.to_datetime(wl_hourly["Datetime"])
             missing_hours = sorted(set(expected_hours) - set(actual_hours))
             if missing_hours:
                 missing_str = ', '.join([dt.strftime("%Y-%m-%d %H:%M") for dt in missing_hours])
-                st.warning(f"Data incomplete! Missing hours: {missing_str}")
+                st.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
             else:
                 upload_success = True
-                wl_hourly = (
-                    df_wl_filtered.groupby("Datetime")["Level Air"].mean().reset_index()
-                    .rename(columns={"Level Air": "Water_level"})
-                    .sort_values(by="Datetime", ascending=True)
-                    .round(2)
-                )
-                st.success("✅ File uploaded successfully!")
+                st.success("✅ File uploaded, cleaned, and validated successfully!")
                 st.dataframe(wl_hourly)
-
     except Exception as e:
         st.error(f"Failed to read file: {e}")
 
