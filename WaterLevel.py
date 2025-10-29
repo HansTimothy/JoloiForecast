@@ -97,7 +97,9 @@ if uploaded_file is not None:
             # -----------------------
             # 5️⃣ Hanya 72 jam terakhir sebelum start_datetime, reset index
             # -----------------------
-            wl_hourly = wl_hourly.loc[wl_hourly["Datetime"] >= (start_datetime - pd.Timedelta(hours=72))].reset_index(drop=True)
+            start_limit = start_datetime - pd.Timedelta(hours=72)
+            wl_hourly = wl_hourly[(wl_hourly["Datetime"] >= start_limit) & (wl_hourly["Datetime"] < start_datetime)]
+            wl_hourly = wl_hourly.drop_duplicates(subset="Datetime").reset_index(drop=True)
             
             # -----------------------
             # 5️⃣ Validasi missing hours (72 jam sebelum start)
