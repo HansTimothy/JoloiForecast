@@ -94,10 +94,13 @@ if uploaded_file is not None:
             wl_hourly = df_wl.resample('H').mean().reset_index()
             wl_hourly['Water_level'] = wl_hourly['Water_level'].interpolate().round(2)
             
+            # Ambil hanya 72 jam terakhir sebelum start_datetime
+            wl_hourly = wl_hourly[wl_hourly["Datetime"] >= (start_datetime - pd.Timedelta(hours=72))].copy()
+            
             # -----------------------
-            # 5️⃣ Validasi missing hours (24 jam sebelum start)
+            # 5️⃣ Validasi missing hours (72 jam sebelum start)
             # -----------------------
-            start_limit = start_datetime - pd.Timedelta(hours=24)
+            start_limit = start_datetime - pd.Timedelta(hours=72)
             end_limit = start_datetime
             expected_hours = pd.date_range(start=start_limit, end=end_limit - pd.Timedelta(hours=1), freq='H')
             actual_hours = pd.to_datetime(wl_hourly["Datetime"])
@@ -187,7 +190,14 @@ def fetch_forecast_multi():
     data = requests.get(url, timeout=30).json()
     all_dfs = []
     for i, dir_name in enumerate(directions):
-        df = pd.DataFrame({k: v[i] for k, v in data["hourly"].items()})
+        df_dict = {}
+        for k, v in data["hourly"].items():
+            # pastikan v[i] valid, jika hanya 1 titik, ambil v langsung
+            if isinstance(v, list) or isinstance(v, np.ndarray):
+                df_dict[k] = v[i] if len(v) > 1 else v[0]
+            else:
+                df_dict[k] = v
+        df = pd.DataFrame(df_dict, index=[0])
         df["Datetime"] = pd.to_datetime(df["time"])
         df["direction"] = dir_name
         df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
