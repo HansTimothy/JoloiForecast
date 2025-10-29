@@ -199,7 +199,7 @@ def fetch_forecast_multi():
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={latitudes}&longitude={longitudes}"
         "&hourly=precipitation,cloud_cover,soil_moisture_0_1cm"
-        "&forecast_days=7&timezone=Asia%2FBangkok"
+        "&forecast_days=16&timezone=Asia%2FBangkok"
     )
 
     try:
