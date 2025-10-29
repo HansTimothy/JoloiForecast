@@ -293,27 +293,6 @@ def fetch_forecast_multi():
 
     return df_weighted
 
-def safe_merge_on_datetime(df_left, df_right, how="left"):
-    """
-    Merge dua DataFrame berdasarkan kolom waktu.
-    Jika kolom waktu masih bernama 'time', otomatis di-rename ke 'Datetime'.
-    Pastikan tipe kolom datetime sama.
-    """
-    # Cek dan rename kolom waktu di df_left
-    if "Datetime" not in df_left.columns and "time" in df_left.columns:
-        df_left = df_left.rename(columns={"time": "Datetime"})
-    # Cek dan rename kolom waktu di df_right
-    if "Datetime" not in df_right.columns and "time" in df_right.columns:
-        df_right = df_right.rename(columns={"time": "Datetime"})
-    
-    # Pastikan tipe datetime
-    df_left["Datetime"] = pd.to_datetime(df_left["Datetime"])
-    df_right["Datetime"] = pd.to_datetime(df_right["Datetime"])
-
-    # Merge
-    merged = pd.merge(df_left, df_right, on="Datetime", how=how).sort_values("Datetime")
-    return merged
-
 # -----------------------------
 # Run Forecast Button
 # -----------------------------
@@ -354,18 +333,32 @@ if upload_success and st.session_state["forecast_running"]:
 
     # 3️⃣ Merge water level and climate data
     progress_container.markdown("Merging water level and climate data...")
-    
-    merged_hist = safe_merge_on_datetime(wl_hourly, climate_hist)
-    merged_hist["Source"] = "Historical"
 
+    # Pastikan kolom waktu benar
+    wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
+    climate_hist = climate_hist.rename(columns={"time": "Datetime"}) if "time" in climate_hist.columns else climate_hist
+    climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
+    
+    climate_forecast = climate_forecast.rename(columns={"time": "Datetime"}) if "time" in climate_forecast.columns else climate_forecast
+    climate_forecast["Datetime"] = pd.to_datetime(climate_forecast["Datetime"])
+    
+    # Merge historical
+    merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
+    merged_hist["Source"] = "Historical"
+    
+    # Merge forecast
     forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
-    forecast_df = pd.DataFrame({"Datetime":forecast_hours})
+    forecast_df = pd.DataFrame({"Datetime": forecast_hours})
+    forecast_df["Datetime"] = pd.to_datetime(forecast_df["Datetime"])
+    
     forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
     forecast_merged["Water_level"] = np.nan
     forecast_merged["Source"] = "Forecast"
-
+    
+    # Gabungkan historical + forecast
     final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime")
     final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
+    
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
