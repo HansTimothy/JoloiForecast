@@ -404,21 +404,25 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         st.plotly_chart(fig, use_container_width=True)
 
         # -----------------------------
-        # Downloads
+        # Downloads (Forecast only, only Datetime + Water_level)
         # -----------------------------
-        export_df = final_df[["Datetime","Water_level","Rainfall","Cloud_cover","Soil_moisture"]].copy()
-        export_df["Datetime"] = export_df["Datetime"].astype(str)
-        csv_buffer = export_df.to_csv(index=False).encode('utf-8')
-
+        forecast_only = final_df[final_df["Source"]=="Forecast"][["Datetime","Water_level"]].copy()
+        forecast_only["Datetime"] = forecast_only["Datetime"].astype(str)
+        
+        # CSV
+        csv_buffer = forecast_only.to_csv(index=False).encode('utf-8')
+        
+        # Excel
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            export_df.to_excel(writer, index=False, sheet_name="Forecast")
+            forecast_only.to_excel(writer, index=False, sheet_name="Forecast")
         excel_buffer.seek(0)
-
+        
+        # PDF
         pdf_buffer = BytesIO()
         doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
         styles = getSampleStyleSheet()
-        data = [export_df.columns.tolist()] + export_df.values.tolist()
+        data = [forecast_only.columns.tolist()] + forecast_only.values.tolist()
         table = Table(data)
         table.setStyle(TableStyle([
             ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#007acc")),
@@ -429,9 +433,10 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
             ('BOTTOMPADDING',(0,0),(-1,0),6),
             ('GRID',(0,0),(-1,-1),0.25,colors.grey),
         ]))
-        elements = [Paragraph("Joloi Water Level Forecast", styles["Title"]), table]
+        elements = [Paragraph("Joloi Water Level Forecast (Forecast Only)", styles["Title"]), table]
         doc.build(elements)
-
+        
+        # Download buttons
         col1, col2, col3 = st.columns(3)
         with col1:
             st.download_button("Download CSV", csv_buffer, "water_level_forecast.csv", "text/csv", use_container_width=True)
