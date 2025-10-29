@@ -190,20 +190,16 @@ def fetch_forecast_multi():
         f"&timezone=Asia%2FBangkok&forecast_days=7"
     )
     data = requests.get(url, timeout=30).json()
+    
     all_dfs = []
     for i, dir_name in enumerate(directions):
-        # ambil data jam per titik dari list of lists
-        df_dict = {}
-        for k, v in data["hourly"].items():
-            if isinstance(v[0], (list, np.ndarray)):
-                df_dict[k] = v[i]
-            else:
-                df_dict[k] = v
-        df = pd.DataFrame(df_dict)
+        hourly_point = data["hourly"][i]  # ambil titik ke-i
+        df = pd.DataFrame(hourly_point)
         df["Datetime"] = pd.to_datetime(df["time"])
         df["direction"] = dir_name
         df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
         all_dfs.append(df)
+    
     # IDW
     weighted_list = []
     for time, group in pd.concat(all_dfs).groupby("Datetime"):
@@ -221,7 +217,7 @@ def fetch_forecast_multi():
     df_weighted = pd.DataFrame(weighted_list)
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
     return df_weighted
-
+    
 # -----------------------------
 # Run Forecast Button
 # -----------------------------
