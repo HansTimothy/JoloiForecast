@@ -387,55 +387,58 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
-        # 📊 Plot Water Level Forecast
+        # Plot
         # -----------------------------
         st.subheader("Water Level Forecast Plot")
-        
         fig = go.Figure()
         hist_df = final_df[final_df["Source"] == "Historical"]
         fore_df = final_df[final_df["Source"] == "Forecast"]
         
-        rmse = 0.05  # nilai RMSE tetap
+        # Hitung RMSE antara data historis terakhir dan forecast awal (jika ada data aktual)
         if not fore_df.empty:
-            # Tambahkan satu titik terakhir historical agar garis forecast nyambung
+            # Contoh nilai RMSE, bisa kamu ubah kalau mau dinamis
+            rmse = 0.05  
+        
             last_val = hist_df["Water_level"].iloc[-1]
             forecast_x = pd.concat([pd.Series([hist_df["Datetime"].iloc[-1]]), fore_df["Datetime"]])
             forecast_y = pd.concat([pd.Series([last_val]), fore_df["Water_level"]])
-            
-            # Hitung batas atas dan bawah ±RMSE
-            upper = forecast_y + rmse
-            lower = forecast_y - rmse
         
-            # Area ±RMSE
+            # Hitung batas atas & bawah error band
+            upper_y = forecast_y + rmse
+            lower_y = forecast_y - rmse
+            lower_y = lower_y.clip(lower=0)  # batas bawah tidak boleh < 0
+        
+            # Tambah area ±RMSE
             fig.add_trace(go.Scatter(
                 x=pd.concat([forecast_x, forecast_x[::-1]]),
-                y=pd.concat([upper, lower[::-1]]),
-                fill='toself',
-                fillcolor='rgba(255,165,0,0.15)',
-                line=dict(color='rgba(255,255,255,0)'),
+                y=pd.concat([upper_y, lower_y[::-1]]),
+                fill="toself",
+                fillcolor="rgba(255,165,0,0.2)",
+                line=dict(color="rgba(255,165,0,0)"),
                 hoverinfo="skip",
-                name='±RMSE 0.05m'
+                showlegend=True,
+                name="±RMSE 0.05m"
             ))
         
-            # Garis Forecast
+            # Tambah garis forecast
             fig.add_trace(go.Scatter(
                 x=forecast_x, y=forecast_y,
                 mode="lines+markers",
                 name="Forecast",
-                line=dict(color="orange", width=2),
+                line=dict(color="orange"),
                 marker=dict(size=4)
             ))
         
-        # Garis Historical
+        # Garis historis
         fig.add_trace(go.Scatter(
             x=hist_df["Datetime"], y=hist_df["Water_level"],
             mode="lines+markers",
             name="Historical",
-            line=dict(color="blue", width=2),
+            line=dict(color="blue"),
             marker=dict(size=4)
         ))
         
-        # Layout
+        # Layout dan annotation RMSE
         fig.update_layout(
             title="Water Level Historical vs Forecast",
             xaxis_title="Datetime",
@@ -445,7 +448,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                 dict(
                     xref="paper", yref="paper",
                     x=0.98, y=0.95,
-                    text=f"RMSE = ±{rmse:.2f} m",
+                    text=f"RMSE = {rmse:.2f}",
                     showarrow=False,
                     font=dict(size=12, color="black"),
                     bgcolor="rgba(255,255,255,0.7)",
@@ -453,22 +456,18 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                     borderwidth=1,
                     borderpad=4
                 )
-            ],
-            legend=dict(
-                x=0.01, y=0.99,
-                bgcolor="rgba(255,255,255,0.6)",
-                bordercolor="rgba(0,0,0,0.1)",
-                borderwidth=1
-            )
+            ]
         )
         
         st.plotly_chart(fig, use_container_width=True)
+        
         # -----------------------------
         # Downloads (Forecast only, Datetime + Water_level, 2 decimals)
         # -----------------------------
-        forecast_only = final_df[final_df["Source"]=="Forecast"][["Datetime","Water_level"]].copy()
+        forecast_only = final_df[final_df["Source"] == "Forecast"][["Datetime", "Water_level"]].copy()
         forecast_only["Water_level"] = forecast_only["Water_level"].round(2)
         forecast_only["Datetime"] = forecast_only["Datetime"].astype(str)
+
         
         # CSV
         csv_buffer = forecast_only.to_csv(index=False).encode('utf-8')
