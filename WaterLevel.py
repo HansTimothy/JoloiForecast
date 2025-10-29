@@ -192,14 +192,9 @@ def fetch_forecast_multi():
     data = requests.get(url, timeout=30).json()
     all_dfs = []
     for i, dir_name in enumerate(directions):
-        df_dict = {}
-        for k, v in data["hourly"].items():
-            # pastikan v[i] valid, jika hanya 1 titik, ambil v langsung
-            if isinstance(v, list) or isinstance(v, np.ndarray):
-                df_dict[k] = v[i] if len(v) > 1 else v[0]
-            else:
-                df_dict[k] = v
-        df = pd.DataFrame(df_dict, index=[0])
+        # ambil data jam per titik dari list of lists
+        df_dict = {k: v[i] for k, v in data["hourly"].items()}
+        df = pd.DataFrame(df_dict)
         df["Datetime"] = pd.to_datetime(df["time"])
         df["direction"] = dir_name
         df["distance_km"] = haversine(points[i][0], points[i][1], center[0], center[1])
