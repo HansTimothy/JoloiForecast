@@ -236,28 +236,34 @@ if run_forecast:
     st.rerun()
 
 # -----------------------------
-# Forecast Logic
+# Forecast Logic (Safe + Progress Detail)
 # -----------------------------
 if upload_success and st.session_state["forecast_running"]:
     progress_container = st.empty()
+    
+    total_forecast_hours = 168
+    total_steps = 3 + total_forecast_hours  # 3 step sebelum loop + 168 jam forecast
+    step_counter = 0
     progress_bar = st.progress(0)
-    step_counter, total_steps = 0, 4+168
 
+    # 1️⃣ Fetch historical climate
     progress_container.markdown("Fetching historical climate data...")
     climate_hist = fetch_historical_multi(start_datetime - timedelta(hours=72), start_datetime)
     step_counter += 1
-    progress_bar.progress(step_counter/total_steps)
+    progress_bar.progress(step_counter / total_steps)
 
+    # 2️⃣ Fetch forecast climate
     progress_container.markdown("Fetching forecast climate data...")
     climate_forecast = fetch_forecast_multi()
     step_counter += 1
-    progress_bar.progress(step_counter/total_steps)
+    progress_bar.progress(step_counter / total_steps)
 
+    # 3️⃣ Merge water level and climate data
     progress_container.markdown("Merging water level and climate data...")
     merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
     merged_hist["Source"] = "Historical"
 
-    forecast_hours = [start_datetime + timedelta(hours=i) for i in range(0,168)]
+    forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
     forecast_df = pd.DataFrame({"Datetime":forecast_hours})
     forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
     forecast_merged["Water_level"] = np.nan
@@ -266,34 +272,56 @@ if upload_success and st.session_state["forecast_running"]:
     final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime")
     final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
     step_counter += 1
-    progress_bar.progress(step_counter/total_steps)
+    progress_bar.progress(step_counter / total_steps)
 
+    # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
     model_features = model.get_booster().feature_names
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
 
     for i, idx in enumerate(forecast_indices, start=1):
-        step_counter += 1
-        progress_bar.progress(step_counter/total_steps)
+        progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
         X_forecast = pd.DataFrame(columns=model_features, index=[0])
+
         for f in model_features:
-            base, lag = f.rsplit("_Lag",1)
-            lag = int(lag)
-            try:
-                X_forecast.at[0,f] = final_df.loc[idx-lag, base]
-            except:
-                X_forecast.at[0,f] = final_df.loc[final_df["Source"]=="Historical", base].iloc[-lag]
+            if "_Lag" in f:
+                base, lag_str = f.rsplit("_Lag",1)
+                try:
+                    lag = int(lag_str)
+                except:
+                    lag = 1
+            else:
+                base = f
+                lag = 0
+
+            # Ambil nilai lag dari final_df
+            if base in final_df.columns:
+                hist_values = final_df.loc[final_df["Source"]=="Historical", base]
+                # Jika lag lebih besar dari panjang historical, ambil value pertama
+                if idx-lag >= 0:
+                    X_forecast.at[0,f] = final_df.iloc[idx-lag].get(base, 0)
+                else:
+                    X_forecast.at[0,f] = hist_values.iloc[0]
+            else:
+                # fallback jika kolom tidak ada
+                X_forecast.at[0,f] = 0
+
+        # pastikan tipe float
         X_forecast = X_forecast.astype(float)
+
+        # prediksi
         y_hat = model.predict(X_forecast)[0]
         if y_hat < 0: y_hat = 0
         final_df.at[idx,"Water_level"] = round(y_hat,2)
+
+        step_counter += 1
+        progress_bar.progress(step_counter / total_steps)
 
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
-
 # -----------------------------
 # Display Forecast & Plot
 # -----------------------------
