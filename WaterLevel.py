@@ -392,8 +392,6 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         hist_df = final_df[final_df["Source"]=="Historical"]
         fore_df = final_df[final_df["Source"]=="Forecast"]
 
-        fig.add_trace(go.Scatter(x=hist_df["Datetime"], y=hist_df["Water_level"],
-                                 mode="lines+markers", name="Historical", line=dict(color="blue"), marker=dict(size=4)))
         if not fore_df.empty:
             last_val = hist_df["Water_level"].iloc[-1]
             forecast_x = pd.concat([pd.Series([hist_df["Datetime"].iloc[-1]]), fore_df["Datetime"]])
@@ -401,6 +399,9 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
             fig.add_trace(go.Scatter(x=forecast_x, y=forecast_y,
                                      mode="lines+markers", name="Forecast", line=dict(color="orange"), marker=dict(size=4)))
 
+        fig.add_trace(go.Scatter(x=hist_df["Datetime"], y=hist_df["Water_level"],
+                                 mode="lines+markers", name="Historical", line=dict(color="blue"), marker=dict(size=4)))
+        
         fig.update_layout(title="Water Level Historical vs Forecast",
                           xaxis_title="Datetime", yaxis_title="Water Level (m)", template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
