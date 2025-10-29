@@ -185,7 +185,7 @@ def fetch_forecast_multi():
     numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_1cm"]
     all_dfs = []
 
-    # Loop tiap titik karena API list per koordinat
+    # Loop request per titik
     for i, (lat, lon) in enumerate(points):
         dir_name = directions[i]
         url = (
@@ -195,24 +195,20 @@ def fetch_forecast_multi():
             f"&timezone=Asia%2FBangkok&forecast_days=7"
         )
         data = requests.get(url, timeout=30).json()
-
+        
         if "hourly" not in data or not data["hourly"]:
-            st.warning(f"No hourly data returned for {dir_name} ({lat},{lon})")
             continue
-
+        
         df = pd.DataFrame(data["hourly"])
         df["Datetime"] = pd.to_datetime(df["time"])
         df["direction"] = dir_name
         df["distance_km"] = haversine(lat, lon, center[0], center[1])
         all_dfs.append(df)
-
-    if not all_dfs:
-        st.error("No forecast data retrieved from API!")
-        return pd.DataFrame(columns=["Datetime","Rainfall","Cloud_cover","Soil_moisture"])
-
-    # IDW
+    
+    # IDW per jam
     weighted_list = []
-    for time, group in pd.concat(all_dfs).groupby("Datetime"):
+    concat_df = pd.concat(all_dfs)
+    for time, group in concat_df.groupby("Datetime"):
         weights = 1 / (group["distance_km"]**2)
         weights /= weights.sum()
         weighted_vals = {
@@ -222,7 +218,6 @@ def fetch_forecast_multi():
             "Soil_moisture": (group["soil_moisture_0_1cm"]*weights).sum()
         }
         weighted_list.append(weighted_vals)
-
     df_weighted = pd.DataFrame(weighted_list)
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
     return df_weighted
