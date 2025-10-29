@@ -95,7 +95,7 @@ if uploaded_file is not None:
             wl_hourly['Water_level'] = wl_hourly['Water_level'].interpolate().round(2)
             
             # Ambil hanya 72 jam terakhir sebelum start_datetime
-            wl_hourly = wl_hourly[wl_hourly["Datetime"] >= (start_datetime - pd.Timedelta(hours=72))].copy()
+            wl_hourly = wl_hourly[wl_hourly["Datetime"] >= (start_datetime - pd.Timedelta(hours=72))]
             
             # -----------------------
             # 5️⃣ Validasi missing hours (72 jam sebelum start)
