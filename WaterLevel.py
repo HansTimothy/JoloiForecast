@@ -132,7 +132,6 @@ points = [
     (-0.59754, 114.12226), # S
     (-0.59754, 114.61599)  # SE
 ]
-center = (-0.10545, 114.20109)  # tetap sebagai titik pusat IDW
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371
@@ -143,32 +142,41 @@ def haversine(lat1, lon1, lat2, lon2):
 
 numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
 
-# Fungsi extract historical climate + IDW multi-point
+# -----------------------------
+# Fungsi extract historical climate + IDW multi-point (1 API request)
+# -----------------------------
 def fetch_historical_multi(start_dt, end_dt):
     numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
-    all_dfs = []
 
-    for lat, lon, dir_name in zip([p[0] for p in points],[p[1] for p in points], directions):
-        url = (
-            f"https://archive-api.open-meteo.com/v1/archive?"
-            f"latitude={lat}&longitude={lon}"
-            f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
-            f"&hourly=precipitation,cloud_cover,soil_moisture_0_to_7cm"
-            f"&timezone=Asia%2FBangkok"
-        )
-        data = requests.get(url, timeout=30).json()
-        df = pd.DataFrame(data["hourly"])
-        df["latitude"], df["longitude"], df["direction"] = lat, lon, dir_name
+    # Gabungkan semua latitude & longitude menjadi string
+    latitudes = ",".join([str(p[0]) for p in points])
+    longitudes = ",".join([str(p[1]) for p in points])
+
+    url = (
+        f"https://archive-api.open-meteo.com/v1/archive?"
+        f"latitude={latitudes}&longitude={longitudes}"
+        f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
+        f"&hourly=precipitation,cloud_cover,soil_moisture_0_to_7cm"
+        f"&timezone=Asia%2FBangkok"
+    )
+
+    data = requests.get(url, timeout=60).json()
+
+    # data["hourly"] sekarang list per titik
+    all_dfs = []
+    for i, point_data in enumerate(data["hourly"]):
+        df = pd.DataFrame(point_data)
         df["Datetime"] = pd.to_datetime(df["time"])
+        df["latitude"], df["longitude"], df["direction"] = points[i][0], points[i][1], directions[i]
         df["distance_km"] = haversine(df["latitude"], df["longitude"], center[0], center[1])
         all_dfs.append(df)
 
-    # IDW
+    # IDW per jam
     weighted_list = []
     for time, group in pd.concat(all_dfs).groupby("Datetime"):
         weights = 1 / (group["distance_km"]**2)
         weights /= weights.sum()
-        weighted_vals = (group[numeric_cols].T*weights.values).T.sum()
+        weighted_vals = (group[numeric_cols].T * weights.values).T.sum()
         weighted_vals["Datetime"] = time
         weighted_list.append(weighted_vals)
 
@@ -181,30 +189,35 @@ def fetch_historical_multi(start_dt, end_dt):
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
     return df_weighted
 
+
+# -----------------------------
+# Fungsi extract forecast climate + IDW multi-point (1 API request)
+# -----------------------------
 def fetch_forecast_multi():
     numeric_cols = ["precipitation","cloud_cover","soil_moisture_0_1cm"]
-    all_dfs = []
 
-    # Loop request per titik
-    for i, (lat, lon) in enumerate(points):
-        dir_name = directions[i]
-        url = (
-            f"https://api.open-meteo.com/v1/forecast?"
-            f"latitude={lat}&longitude={lon}"
-            f"&hourly=precipitation,cloud_cover,soil_moisture_0_1cm"
-            f"&timezone=Asia%2FBangkok&forecast_days=7"
-        )
-        data = requests.get(url, timeout=30).json()
-        
-        if "hourly" not in data or not data["hourly"]:
+    latitudes = ",".join([str(p[0]) for p in points])
+    longitudes = ",".join([str(p[1]) for p in points])
+
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={latitudes}&longitude={longitudes}"
+        f"&hourly=precipitation,cloud_cover,soil_moisture_0_1cm"
+        f"&timezone=Asia%2FBangkok&forecast_days=7"
+    )
+
+    data = requests.get(url, timeout=60).json()
+
+    all_dfs = []
+    for i, point_data in enumerate(data["hourly"]):
+        if not point_data:  # skip jika data kosong
             continue
-        
-        df = pd.DataFrame(data["hourly"])
+        df = pd.DataFrame(point_data)
         df["Datetime"] = pd.to_datetime(df["time"])
-        df["direction"] = dir_name
-        df["distance_km"] = haversine(lat, lon, center[0], center[1])
+        df["latitude"], df["longitude"], df["direction"] = points[i][0], points[i][1], directions[i]
+        df["distance_km"] = haversine(df["latitude"], df["longitude"], center[0], center[1])
         all_dfs.append(df)
-    
+
     # IDW per jam
     weighted_list = []
     concat_df = pd.concat(all_dfs)
@@ -218,6 +231,7 @@ def fetch_forecast_multi():
             "Soil_moisture": (group["soil_moisture_0_1cm"]*weights).sum()
         }
         weighted_list.append(weighted_vals)
+
     df_weighted = pd.DataFrame(weighted_list)
     df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
     return df_weighted
