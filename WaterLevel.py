@@ -95,9 +95,9 @@ if uploaded_file is not None:
             wl_hourly['Water_level'] = wl_hourly['Water_level'].interpolate().round(2)
             
             # -----------------------
-            # 5️⃣ Hanya 72 jam terakhir sebelum start_datetime
+            # 5️⃣ Hanya 72 jam terakhir sebelum start_datetime, reset index
             # -----------------------
-            wl_hourly = wl_hourly.loc[wl_hourly["Datetime"] >= (start_datetime - pd.Timedelta(hours=72))].copy()
+            wl_hourly = wl_hourly.loc[wl_hourly["Datetime"] >= (start_datetime - pd.Timedelta(hours=72))].reset_index(drop=True)
             
             # -----------------------
             # 5️⃣ Validasi missing hours (72 jam sebelum start)
