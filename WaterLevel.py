@@ -320,48 +320,7 @@ if upload_success and st.session_state["forecast_running"]:
     # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
     # Gunakan urutan manual fitur
-    model_features = [
-        "Rainfall_Lag28", "Rainfall_Lag29", "Rainfall_Lag30", "Rainfall_Lag31", "Rainfall_Lag32", "Rainfall_Lag33",
-        "Rainfall_Lag34", "Rainfall_Lag35", "Rainfall_Lag36", "Rainfall_Lag37", "Rainfall_Lag38",
-        "Cloud_cover_Lag1", "Cloud_cover_Lag2", "Cloud_cover_Lag3", "Cloud_cover_Lag4", "Cloud_cover_Lag5",
-        "Cloud_cover_Lag6", "Cloud_cover_Lag7", "Cloud_cover_Lag8", "Cloud_cover_Lag9", "Cloud_cover_Lag10",
-        "Cloud_cover_Lag11", "Cloud_cover_Lag12", "Cloud_cover_Lag13", "Cloud_cover_Lag14", "Cloud_cover_Lag15",
-        "Cloud_cover_Lag16", "Cloud_cover_Lag17", "Cloud_cover_Lag18", "Cloud_cover_Lag19", "Cloud_cover_Lag20",
-        "Cloud_cover_Lag21", "Cloud_cover_Lag22", "Cloud_cover_Lag23", "Cloud_cover_Lag24", "Cloud_cover_Lag25",
-        "Cloud_cover_Lag26", "Cloud_cover_Lag27", "Cloud_cover_Lag28", "Cloud_cover_Lag29", "Cloud_cover_Lag30",
-        "Cloud_cover_Lag31", "Cloud_cover_Lag32", "Cloud_cover_Lag33", "Cloud_cover_Lag34", "Cloud_cover_Lag35",
-        "Cloud_cover_Lag36", "Cloud_cover_Lag37", "Cloud_cover_Lag38",
-        "Soil_moisture_Lag1", "Soil_moisture_Lag2", "Soil_moisture_Lag3", "Soil_moisture_Lag4", "Soil_moisture_Lag5",
-        "Soil_moisture_Lag6", "Soil_moisture_Lag7", "Soil_moisture_Lag8", "Soil_moisture_Lag9", "Soil_moisture_Lag10",
-        "Soil_moisture_Lag11", "Soil_moisture_Lag12", "Soil_moisture_Lag13", "Soil_moisture_Lag14", "Soil_moisture_Lag15",
-        "Soil_moisture_Lag16", "Soil_moisture_Lag17", "Soil_moisture_Lag18", "Soil_moisture_Lag19", "Soil_moisture_Lag20",
-        "Soil_moisture_Lag21", "Soil_moisture_Lag22", "Soil_moisture_Lag23", "Soil_moisture_Lag24", "Soil_moisture_Lag25",
-        "Soil_moisture_Lag26", "Soil_moisture_Lag27", "Soil_moisture_Lag28", "Soil_moisture_Lag29", "Soil_moisture_Lag30",
-        "Soil_moisture_Lag31", "Soil_moisture_Lag32", "Soil_moisture_Lag33", "Soil_moisture_Lag34", "Soil_moisture_Lag35",
-        "Soil_moisture_Lag36", "Soil_moisture_Lag37", "Soil_moisture_Lag38", "Soil_moisture_Lag39", "Soil_moisture_Lag40",
-        "Soil_moisture_Lag41", "Soil_moisture_Lag42", "Soil_moisture_Lag43", "Soil_moisture_Lag44", "Soil_moisture_Lag45",
-        "Soil_moisture_Lag46", "Soil_moisture_Lag47", "Soil_moisture_Lag48", "Soil_moisture_Lag49", "Soil_moisture_Lag50",
-        "Soil_moisture_Lag51", "Soil_moisture_Lag52", "Soil_moisture_Lag53", "Soil_moisture_Lag54", "Soil_moisture_Lag55",
-        "Soil_moisture_Lag56", "Soil_moisture_Lag57", "Soil_moisture_Lag58", "Soil_moisture_Lag59", "Soil_moisture_Lag60",
-        "Soil_moisture_Lag61", "Soil_moisture_Lag62", "Soil_moisture_Lag63", "Soil_moisture_Lag64", "Soil_moisture_Lag65",
-        "Soil_moisture_Lag66", "Soil_moisture_Lag67", "Soil_moisture_Lag68", "Soil_moisture_Lag69", "Soil_moisture_Lag70",
-        "Soil_moisture_Lag71", "Soil_moisture_Lag72",
-        "Water_level_Lag1", "Water_level_Lag2", "Water_level_Lag3", "Water_level_Lag4", "Water_level_Lag5",
-        "Water_level_Lag6", "Water_level_Lag7", "Water_level_Lag8", "Water_level_Lag9", "Water_level_Lag10",
-        "Water_level_Lag11", "Water_level_Lag12", "Water_level_Lag13", "Water_level_Lag14", "Water_level_Lag15",
-        "Water_level_Lag16", "Water_level_Lag17", "Water_level_Lag18", "Water_level_Lag19", "Water_level_Lag20",
-        "Water_level_Lag21", "Water_level_Lag22", "Water_level_Lag23", "Water_level_Lag24", "Water_level_Lag25",
-        "Water_level_Lag26", "Water_level_Lag27", "Water_level_Lag28", "Water_level_Lag29", "Water_level_Lag30",
-        "Water_level_Lag31", "Water_level_Lag32", "Water_level_Lag33", "Water_level_Lag34", "Water_level_Lag35",
-        "Water_level_Lag36", "Water_level_Lag37", "Water_level_Lag38", "Water_level_Lag39", "Water_level_Lag40",
-        "Water_level_Lag41", "Water_level_Lag42", "Water_level_Lag43", "Water_level_Lag44", "Water_level_Lag45",
-        "Water_level_Lag46", "Water_level_Lag47", "Water_level_Lag48", "Water_level_Lag49", "Water_level_Lag50",
-        "Water_level_Lag51", "Water_level_Lag52", "Water_level_Lag53", "Water_level_Lag54", "Water_level_Lag55",
-        "Water_level_Lag56", "Water_level_Lag57", "Water_level_Lag58", "Water_level_Lag59", "Water_level_Lag60",
-        "Water_level_Lag61", "Water_level_Lag62", "Water_level_Lag63", "Water_level_Lag64", "Water_level_Lag65",
-        "Water_level_Lag66", "Water_level_Lag67", "Water_level_Lag68", "Water_level_Lag69", "Water_level_Lag70",
-        "Water_level_Lag71", "Water_level_Lag72"
-    ]
+    model_features = model.get_booster().feature_names
 
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
 
