@@ -321,7 +321,7 @@ if upload_success and st.session_state["forecast_running"]:
     progress_container.markdown("Forecasting water level 7 days iteratively...")
     # Gunakan urutan manual fitur
     model_features = [
-        "Rainfall_Lag29","Rainfall_Lag30","Rainfall_Lag31","Rainfall_Lag32","Rainfall_Lag33","Rainfall_Lag34","Rainfall_Lag35","Rainfall_Lag36","Rainfall_Lag37","Rainfall_Lag38",
+        "Rainfall_Lag28","Rainfall_Lag29","Rainfall_Lag30","Rainfall_Lag31","Rainfall_Lag32","Rainfall_Lag33","Rainfall_Lag34","Rainfall_Lag35","Rainfall_Lag36","Rainfall_Lag37","Rainfall_Lag38",
         "Cloud_cover_Lag1","Cloud_cover_Lag2","Cloud_cover_Lag3","Cloud_cover_Lag4","Cloud_cover_Lag5","Cloud_cover_Lag6","Cloud_cover_Lag7","Cloud_cover_Lag8","Cloud_cover_Lag9","Cloud_cover_Lag10",
         "Cloud_cover_Lag11","Cloud_cover_Lag12","Cloud_cover_Lag13","Cloud_cover_Lag14","Cloud_cover_Lag15","Cloud_cover_Lag16","Cloud_cover_Lag17","Cloud_cover_Lag18","Cloud_cover_Lag19","Cloud_cover_Lag20",
         "Cloud_cover_Lag21","Cloud_cover_Lag22","Cloud_cover_Lag23","Cloud_cover_Lag24","Cloud_cover_Lag25","Cloud_cover_Lag26","Cloud_cover_Lag27","Cloud_cover_Lag28","Cloud_cover_Lag29","Cloud_cover_Lag30",
